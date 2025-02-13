@@ -59,7 +59,6 @@ class NukeGroup:
         # Keep track of group inputs.
         if (
             node.node_type in GROUP_INPUT_NODE
-            # and len(self.input_stack) < self.num_inputs
         ):
             self.input_stack.append(node)
 

@@ -28,4 +28,4 @@
 - [] Ensure async requests.
 
 # setup notes
-- have user setup the correct venv.
+- [ ] Automate for user.

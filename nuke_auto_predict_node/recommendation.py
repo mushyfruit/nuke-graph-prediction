@@ -20,7 +20,9 @@ def load_model_vocab():
         os.path.dirname(__file__), "model", "checkpoints", "nuke_predictor_gat"
     )
     vocab_path = os.path.join(model_path, "vocab.json")
-    # Load vocabulary
+    if not os.path.exists(vocab_path):
+        return
+
     with open(vocab_path, "r") as f:
         _model_vocabulary = json.load(f).get("node_type_to_idx", {})
 

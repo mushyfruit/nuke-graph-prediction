@@ -1,15 +1,12 @@
 import os
-import sys
 import json
 import numpy as np
 from tqdm import tqdm
 from collections import defaultdict, deque
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.dirname(os.path.dirname(SCRIPT_DIR)))
+from .utilities import download_remote_files
+from .constants import NukeScript, INVALID_NODE_CLASSES
 
-from nuke_auto_predict_node.model.utilities import download_remote_files
-from nuke_auto_predict_node.model.constants import NukeScript, INVALID_NODE_CLASSES
 import torch
 from torch_geometric.data import Data, Dataset
 

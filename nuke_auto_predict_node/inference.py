@@ -11,7 +11,7 @@ from nuke_script.serialization import NukeGraphSerializer
 from model.dataset import NukeGraphConverter, NukeGraphDataset
 from model.model import NukeGATPredictor
 from model.main import train_model_gat
-from model.constants import MODEL_NAME
+from model.constants import MODEL_NAME, MODEL_PATH, VOCAB, MODEL_DATA_FOLDER
 from model.utilities import check_state_dict
 
 import torch
@@ -31,11 +31,12 @@ class MLModel:
         self.load_model()
 
     def load_model(self):
-        model_path = os.path.join(
-            os.path.dirname(__file__), "model", "checkpoints", self.model_name
-        )
+        model_path = os.path.join(MODEL_PATH, self.model_name)
         model_checkpoint_path = os.path.join(model_path, f"{self.model_name}_model.pt")
-        vocab_path = os.path.join(model_path, "vocab.json")
+        vocab_path = os.path.join(model_path, VOCAB)
+
+        if not os.path.exists(model_path):
+            return
 
         # Load checkpoint
         checkpoint = torch.load(model_checkpoint_path, map_location=self.device)
@@ -68,8 +69,10 @@ class MLModel:
         # save_model_checkpoint(trained_model, self.dataset, save_dir, MODEL_NAME)
         pass
 
-    def parse_and_serialize_scripts(self, script_paths):
-        output_dir = os.path.join(os.path.dirname(__file__), "test", "serialized")
+    def parse_and_serialize_scripts(self, script_paths, output_dir=None):
+        if output_dir is None:
+            output_dir = MODEL_DATA_FOLDER
+
         os.makedirs(output_dir, exist_ok=True)
 
         parser = NukeScriptParser()

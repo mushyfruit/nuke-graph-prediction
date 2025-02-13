@@ -32,9 +32,7 @@ class TrainingConfig:
 
 def main(download=False):
     config = TrainingConfig()
-
-    graph_dir = os.path.join(os.path.dirname(__file__), "data/nuke_graphs")
-    dataset = NukeGraphDataset(graph_dir, should_download=download)
+    dataset = NukeGraphDataset(PARSED_SCRIPT_DIR, should_download=download)
 
     print(f"Dataset contains {len(dataset)} graphs")
     print(f"Number of node types: {len(dataset.node_type_to_idx)}")

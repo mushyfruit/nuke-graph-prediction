@@ -4,8 +4,6 @@ from dotenv import load_dotenv
 from subprocess import Popen, PIPE
 from tqdm import tqdm
 
-NUKE_GRAPH_DIR = os.path.join(os.path.dirname(__file__), "data/nuke_graphs")
-
 
 def json_back_to_nk():
     import glob
@@ -58,15 +56,15 @@ def list_remote_files(ext=".json"):
     return [f for f in stdout.strip().split("\n") if f.endswith(ext)]
 
 
-def download_remote_files():
+def download_remote_files(output_dir):
     # Ensure the nuke_graphs directory exists.
-    os.makedirs(NUKE_GRAPH_DIR, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
     remote_files = list_remote_files()
 
     # Download each file if it doesn't exist locally
     with tqdm(remote_files, desc="Downloading files") as pbar:
         for filename in pbar:
-            local_path = os.path.join(NUKE_GRAPH_DIR, filename)
+            local_path = os.path.join(output_dir, filename)
             if not os.path.exists(local_path):
                 pbar.set_description(f"Downloading {filename}")
                 download_file(filename, local_path)

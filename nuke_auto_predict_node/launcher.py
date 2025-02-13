@@ -1,5 +1,4 @@
 import os
-import sys
 import atexit
 import signal
 import subprocess
@@ -38,7 +37,6 @@ class InferenceLauncher:
             stderr=subprocess.PIPE,
             # Thread-safe alternative to preexec_fn=os.setsid
             start_new_session=True,
-            #cwd=os.path.dirname(os.path.abspath(script_path)),
         )
 
         # for line in self.process.stdout:
@@ -67,26 +65,39 @@ class InferenceLauncher:
 
     def get_subprocess_env(self):
         env = os.environ.copy()
+
+        result = subprocess.run(
+            [f"{self.venv_path}/bin/python3", "-V"],
+            capture_output=True,
+            text=True
+        )
+
+        version = result.stdout.strip().split()[1]
+        major, minor, _ = version.split(".")
+        python_dir = f"python{major}.{minor}"
+
         python_path = os.path.join(
             self.venv_path,
             "lib",
-            "python3.12",
-            "site-packages",
+            python_dir,
+            "site-packages"
         )
 
-        # TODO: Formalize how we retrieve the PyTorch install.
-        base_path = "/home/andrew/Documents/Dev/machine_learning_project/.venv"
-        torch64_path = os.path.join(base_path, "lib64", "python3.12", "site-packages")
-        torch_path = os.path.join(base_path, "lib", "python3.12", "site-packages")
+        paths = [python_path]
+        torch_location = os.getenv('PYTORCH_INSTALL')
+        if torch_location:
+            target = "lib64" if "lib64" in torch_location else "lib"
+            for lib_dir in ["lib", "lib64"]:
+                torch_path = torch_location.replace(target, lib_dir)
+                if os.path.exists(torch_path):
+                    paths.append(torch_path)
 
-        env["PYTHONPATH"] = f"{python_path}:{torch_path}:{torch64_path}"
-
+        env["PYTHONPATH"] = ":".join(paths)
         return env
 
 
 def launch_inference_service():
     # Ensure the inference service's virtual env exists.
-    log.info('launch')
     if not os.path.exists(VENV_DIR_PATH):
         create_launcher_venv()
         return
