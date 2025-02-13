@@ -1,0 +1,19 @@
+__pycache__/
+
+# test and data dir
+test/
+model/data/
+test_outputs/
+test_scripts/
+json_files/
+
+# model checkpoints
+nuke_auto_predict_node/checkpoints/*
+!nuke_auto_predict_node/checkpoints/.gitkeep
+
+# venv
+venv/
+nuke_auto_predict_node/inference_venv/
+
+# dotenv
+.env
