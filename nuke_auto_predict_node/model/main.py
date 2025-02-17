@@ -3,12 +3,11 @@ from torch_geometric.loader import DataLoader
 import torch.optim as optim
 import torch.amp as amp
 
-import os
 import copy
 import time
 from dataclasses import dataclass
 
-from .constants import MODEL_NAME
+from .constants import MODEL_NAME, MODEL_DATA_FOLDER
 from .utilities import save_model_checkpoint, load_model_checkpoint
 from .dataset import NukeGraphDataset
 from .model import NukeGATPredictor
@@ -25,29 +24,29 @@ class TrainingConfig:
     num_workers: int = 4
 
     # Model Parameters
-    num_layers: int = 5
-    hidden_channels: int = 128
+    num_layers: int = 4
+    hidden_channels: int = 256
     dropout: float = 0.2
 
 
-def main(download=False):
+def main():
     config = TrainingConfig()
-    dataset = NukeGraphDataset(PARSED_SCRIPT_DIR, should_download=download)
+
+    dataset = NukeGraphDataset(force_rebuild=True)
+    dataset.process_all_graphs_in_dir(MODEL_DATA_FOLDER)
 
     print(f"Dataset contains {len(dataset)} graphs")
-    print(f"Number of node types: {len(dataset.node_type_to_idx)}")
+    print(f"Number of node types: {len(dataset.vocab)}")
 
     model = NukeGATPredictor(
         num_features=4,
-        num_classes=len(dataset.node_type_to_idx),
+        num_classes=len(dataset.vocab),
         hidden_channels=config.hidden_channels,
         dropout=config.dropout,
         num_layers=config.num_layers,
     )
     trained_model = train_model_gat(dataset, model, config)
-
-    save_dir = os.path.join(os.path.dirname(__file__), "checkpoints")
-    save_model_checkpoint(trained_model, dataset, save_dir, MODEL_NAME)
+    save_model_checkpoint(trained_model, MODEL_NAME)
 
 
 def setup_dataloaders(dataset: NukeGraphDataset, config: TrainingConfig):
@@ -90,6 +89,8 @@ def train_model_gat(dataset, model, config=None, memory_fraction=None):
     device_type = "cuda" if torch.cuda.is_available() else "cpu"
     device = torch.device(device_type)
     model = model.to(device)
+
+    torch._dynamo.config.capture_scalar_outputs = True
     torch.backends.cudnn.benchmark = True
 
     if memory_fraction is not None:
@@ -239,12 +240,11 @@ def train_model_gat(dataset, model, config=None, memory_fraction=None):
     return model
 
 
-def load_for_inference(model_dir: str, device="cuda"):
-    model_dir = os.path.join(os.path.dirname(__file__), "model/checkpoints")
-    model, _, vocab = load_model_checkpoint(model_dir, MODEL_NAME, device)
+def load_for_inference(device="cuda"):
+    model, _, vocab = load_model_checkpoint(MODEL_NAME, device)
     model.eval()
     return model, vocab
 
 
 if __name__ == "__main__":
-    main(download=True)
+    main()

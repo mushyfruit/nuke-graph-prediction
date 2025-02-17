@@ -189,11 +189,12 @@ class PredictionWidget(QtWidgets.QWidget):
     def _on_training_btn_clicked(self):
         handler = get_request_handler()
         if not self._stored_nuke_files:
-            self._update_status_label("Unable to start training. Please select a valid directory.")
+            self._update_status_label(
+                "Unable to start training. Please select a valid directory."
+            )
             return
 
         handler.kickoff_training(self._stored_nuke_files)
-
 
     def _setup_prediction_page(self):
         self.prediction_page = QtWidgets.QWidget()

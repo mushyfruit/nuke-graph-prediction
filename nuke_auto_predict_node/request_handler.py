@@ -55,7 +55,12 @@ class RequestHandler:
         except Exception as e:
             raise NukeRequestError(f"Unexpected error: {str(e)}")
 
-    def post(self, endpoint: str, data: Dict[str, Any], custom_timeout: Optional[float] = None) -> Dict[str, Any]:
+    def post(
+        self,
+        endpoint: str,
+        data: Dict[str, Any],
+        custom_timeout: Optional[float] = None,
+    ) -> Dict[str, Any]:
         url = f"{self.base_url}{endpoint}"
 
         encoded_data = json.dumps(data).encode("utf-8")

@@ -4,11 +4,10 @@ from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 import traceback
 
-
 from nuke_script.parser import NukeScriptParser
 from nuke_script.serialization import NukeGraphSerializer
 
-from model.dataset import NukeGraphConverter, NukeGraphDataset
+from model.dataset import NukeGraphBuilder, Vocabulary
 from model.model import NukeGATPredictor
 from model.main import train_model_gat
 from model.constants import MODEL_NAME, MODEL_PATH, VOCAB, MODEL_DATA_FOLDER
@@ -16,38 +15,37 @@ from model.utilities import check_state_dict
 
 import torch
 
+from torch_geometric.data import Data
 
-class MLModel:
-    def __init__(self):
+
+class NukeNodePredictor:
+    def __init__(self, model_name: str = None):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.model = None
         self.vocab = None
+        self.model_name = model_name if model_name else MODEL_NAME
 
-        self.node_to_idx_type = None
-        self.idx_to_node_type = None
+        self.load()
 
-        self.model_name = MODEL_NAME
-        self.load_model()
-
-    def load_model(self):
+    def load(self):
+        # Retrieve the checkpoint's path.
         model_path = os.path.join(MODEL_PATH, self.model_name)
         model_checkpoint_path = os.path.join(model_path, f"{self.model_name}_model.pt")
+        if not os.path.exists(model_checkpoint_path):
+            raise FileNotFoundError(f"Model {self.model_name} not found")
+
         vocab_path = os.path.join(model_path, VOCAB)
+        if not os.path.exists(vocab_path):
+            raise FileNotFoundError(f"Vocab {vocab_path} not found")
 
-        if not os.path.exists(model_path):
-            return
-
-        # Load checkpoint
+        # Load the model checkpoint.
         checkpoint = torch.load(model_checkpoint_path, map_location=self.device)
 
-        # Load vocabulary
-        with open(vocab_path, "r") as f:
-            self.vocab = json.load(f)
+        # Populate the model's stored vocabulary.
+        self.vocab = Vocabulary(vocab_path)
 
-        self.node_to_idx_type = self.vocab.get("node_type_to_idx", {})
-        self.idx_to_node_type = {v: k for k, v in self.node_to_idx_type.items()}
-
+        # Instantiate the GAT model.
         self.model = NukeGATPredictor(
             num_features=4,
             num_classes=self.vocab["num_node_types"],
@@ -57,8 +55,10 @@ class MLModel:
             dropout=checkpoint["dropout"],
         ).to(self.device)
 
-        # self.model = torch.compile(self.model)
+        # Restore the state dictionary.
         self.model.load_state_dict(check_state_dict(checkpoint["state_dict"]))
+
+        # Set model into inference mode.
         self.model.eval()
 
     def train_model(self, directory):
@@ -68,6 +68,26 @@ class MLModel:
         # save_dir = os.path.join(os.path.dirname(__file__), "model", "checkpoints")
         # save_model_checkpoint(trained_model, self.dataset, save_dir, MODEL_NAME)
         pass
+
+    def predict(self, pyg_graph_data: Data):
+        test_data = pyg_graph_data.to(self.device)
+
+        # Disable gradient computation.
+        with torch.no_grad():
+            predictions = self.model(test_data)
+            probabilities = torch.nn.functional.softmax(predictions, dim=1)
+            top_probs, top_indices = torch.topk(probabilities, k=5)
+
+            results = []
+            for sample_probs, sample_indices in zip(top_probs, top_indices):
+                node_predictions = []
+                for idx, prob in zip(sample_indices, sample_probs):
+                    node_type = self.vocab.get_type(idx.item())
+                    probability = prob.item()
+                    node_predictions.append((node_type, probability))
+                results.append(node_predictions)
+
+        return results
 
     def parse_and_serialize_scripts(self, script_paths, output_dir=None):
         if output_dir is None:
@@ -93,29 +113,11 @@ class MLModel:
 
         return output_dir
 
-    def predict(self, pyg_graph_data):
-        test_data = pyg_graph_data.to(self.device)
-        with torch.no_grad():
-            predictions = self.model(test_data)
-            probabilities = torch.nn.functional.softmax(predictions, dim=1)
-            top_probs, top_indices = torch.topk(probabilities, k=5)
-
-            results = []
-            for sample_probs, sample_indices in zip(top_probs, top_indices):
-                node_predictions = []
-                for idx, prob in zip(sample_indices, sample_probs):
-                    node_type = self.idx_to_node_type[idx.item()]
-                    probability = prob.item()
-                    node_predictions.append((node_type, probability))
-                results.append(node_predictions)
-
-        return results
-
 
 app = FastAPI()
 
-model = MLModel()
-converter = NukeGraphConverter(model.node_to_idx_type)
+predictor = NukeNodePredictor()
+converter = NukeGraphBuilder(predictor.vocab)
 
 
 @app.post("/train")
@@ -124,21 +126,28 @@ async def predict(request: Request):
     try:
         data = await request.json()
         file_paths = data.get("file_paths", [])
-        results = model.parse_and_serialize_scripts(file_paths)
+        results = predictor.parse_and_serialize_scripts(file_paths)
         return results
     except Exception as e:
         error_details = {"error": str(e), "traceback": traceback.format_exc()}
-        raise HTTPException(
-            status_code=500, detail=f"Training failed: {error_details}"
-        )
+        raise HTTPException(status_code=500, detail=f"Training failed: {error_details}")
+
 
 @app.post("/predict")
 async def predict(request: Request):
     """Prediction endpoint"""
     try:
         data = await request.json()
-        pyg_graph_data = converter.convert_json_to_pyg(data)
-        prediction = model.predict(pyg_graph_data)
+
+        # get start node name
+
+        start_node_name = data.get("start_node_name")
+        nodes = data.get("root", {})["nodes"]
+        start_node = nodes[start_node_name]
+
+        # Use the dataset class to convert JSON representations to PYG.
+        pyg_graph_data = converter.create_graph_data(data, start_node)
+        prediction = predictor.predict(pyg_graph_data)
         result = {"prediction": prediction}
 
         return result

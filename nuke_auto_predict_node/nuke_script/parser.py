@@ -57,9 +57,7 @@ class NukeGroup:
                 node.input_connections.insert(0, input_node)
 
         # Keep track of group inputs.
-        if (
-            node.node_type in GROUP_INPUT_NODE
-        ):
+        if node.node_type in GROUP_INPUT_NODE:
             self.input_stack.append(node)
 
         # Don't track viewer as they are terminal nodes.

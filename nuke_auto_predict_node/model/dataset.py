@@ -1,80 +1,131 @@
 import os
 import json
+import pickle
+import logging
 import numpy as np
 from tqdm import tqdm
-from collections import defaultdict, deque
+from collections import deque
 
-from .utilities import download_remote_files
-from .constants import NukeScript, INVALID_NODE_CLASSES
+from .constants import NukeScript, DATA_CACHE_PATH, VOCAB
 
 import torch
 from torch_geometric.data import Data, Dataset
 
+from typing import Dict, Optional
 
-class NukeGraphConverter:
-    def __init__(self, node_type_vocab):
-        self.node_type_to_idx = node_type_vocab
-        self.feature_config = {"numerical": [1, 2]}
+log = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
-    def _normalize_seq_features(self, raw_features, numerical_indices):
-        """Normalize numerical features using the same method as training."""
-        features = np.array(raw_features)
-        normalized = features.copy()
 
-        if len(features) > 1:
-            for idx in numerical_indices:
-                values = features[:, idx]
-                mean = np.mean(values)
-                std = np.std(values)
+class Vocabulary:
+    def __init__(self, vocab_file: Optional[str] = None):
+        self._type_to_idx: Dict[str, int] = {}
+        self._idx_to_type: Dict[int, str] = {}
 
-                if std > 1e-6:
-                    normalized[:, idx] = (values - mean) / std
-                else:
-                    normalized[:, idx] = values - mean
+        if vocab_file:
+            self.load(vocab_file)
 
-        return normalized.tolist()
+    def get_idx(self, node_type: str) -> int:
+        return self.add(node_type)
 
-    def convert_json_to_pyg(self, json_data, min_context=3, max_context=15):
+    def get_type(self, idx: int) -> str:
+        return self._idx_to_type[idx]
+
+    def add(self, node_type: str) -> int:
+        """Adds a new node type to the vocabulary if it doesn't exist."""
+        if node_type not in self._type_to_idx:
+            idx = len(self._type_to_idx)
+            self._type_to_idx[node_type] = idx
+            self._idx_to_type[idx] = node_type
+            return idx
+        return self._type_to_idx[node_type]
+
+    def load(self, file_path) -> None:
+        """Loads the vocabulary from a JSON file."""
+        if not os.path.exists(file_path):
+            log.warning(
+                f"Vocabulary file {file_path} not found. Starting with empty vocabulary."
+            )
+            return
+        try:
+            with open(file_path, "r") as f:
+                data = json.load(f)
+
+            self._type_to_idx = data["node_type_to_idx"]
+            self._idx_to_type = {idx: type_ for type_, idx in self._type_to_idx.items()}
+        except (json.JSONDecodeError, KeyError) as e:
+            raise ValueError(f"Invalid vocabulary file format: {e}")
+
+    def save(self, file_path: str) -> None:
+        """Saves the vocabulary to a JSON file."""
+        data = {"node_type_to_idx": self._type_to_idx, "num_node_types": len(self)}
+
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        with open(file_path, "w") as f:
+            json.dump(data, f, indent=2)
+
+    def __contains__(self, node_type: str) -> bool:
+        return node_type in self._type_to_idx
+
+    def __len__(self) -> int:
+        return len(self._type_to_idx)
+
+
+class NukeGraphBuilder:
+    def __init__(self, vocabulary):
+        self.vocabulary = vocabulary
+
+    def create_graph_data(
+        self,
+        serialized_graph: Dict[str, dict],
+        start_node_data: Dict[str, any],
+        update_vocab: bool = False,
+        min_upstream_nodes: int = 5,
+        include_start_node=False,
+    ) -> Optional[Data]:
+        """Creates a PyG graph from serialized json Nuke graph data.
+
+        :param serialized_graph: Dictionary containing the entire graph structure.
+        :param start_node_data: Dictionary containing the start node's data.
+        :param update_vocab: Whether to update the vocabulary.
+        :param include_start_node: Whether to include the start node in the
+            upstream traversal. Used for model inference only.
+        :param min_upstream_nodes: Minimum number of nodes required for a
+            valid graph example.
+        :returns: A PyTorch Geometric Data object containing the processed graph
+        :rtype: Data or None.
         """
-        Convert JSON data to PyTorch Geometric Data format.
+        nodes = serialized_graph.get("root", {}).get("nodes", {})
+        if not nodes:
+            raise RuntimeError("No nodes found in serialized graph!")
 
-        Args:
-            json_data (dict): JSON data in the same format as training data
-            min_context (int): Minimum number of nodes to process
-            max_context (int): Maximum number of nodes to consider
-
-        Returns:
-            torch_geometric.data.Data: Graph data ready for model inference
-        """
-        nodes = json_data.get("root", {}).get("nodes", {})
-        ordered_nodes = list(nodes.items())
-
-        # Take the last max_context nodes
-        start_idx = max(0, len(ordered_nodes) - max_context)
-        curr_nodes = ordered_nodes[start_idx:]
-
-        if len(curr_nodes) < min_context:
-            raise ValueError(f"Not enough nodes (minimum {min_context} required)")
-
-        # Extract and normalize features
-        raw_features = []
-        for node_name, node_data in curr_nodes:
-            raw_features.append(get_node_features(node_data, self.node_type_to_idx))
-
-        normalized_features = self._normalize_seq_features(
-            raw_features, self.feature_config["numerical"]
+        # Construct the upstream graph.
+        upstreams = get_upstream_nodes(
+            nodes, start_node_data, include_start=include_start_node
         )
+
+        # Ensure a minimum number of upstream nodes for the graph data.
+        if len(upstreams) < min_upstream_nodes:
+            return None
+
+        raw_features = []
+        for node_data in upstreams:
+            if update_vocab and self.vocabulary:
+                self.vocabulary.add(node_data["node_type"])
+
+            raw_features.append(get_node_features(node_data, self.vocabulary))
+
+        normalized_features = normalize_features(raw_features)
 
         # Build edge connections
         edge_index = [[], []]
         edge_attr = []
         node_name_to_idx = {
-            node_name: idx for idx, (node_name, _) in enumerate(curr_nodes)
+            node_dict["name"]: idx for idx, node_dict in enumerate(upstreams)
         }
 
-        for node_name, node_data in curr_nodes:
-            curr_idx = node_name_to_idx[node_name]
-
+        for node_data in upstreams:
+            curr_idx = node_name_to_idx[node_data["name"]]
             for input_idx, input_node in enumerate(
                 node_data.get("input_connections", [])
             ):
@@ -84,93 +135,132 @@ class NukeGraphConverter:
                     edge_index[1].append(curr_idx)
                     edge_attr.append(input_idx)
 
-        # Create tensors
+        # Create node, edge connectivity, and edge feature matrices.
         node_features = torch.tensor(normalized_features, dtype=torch.float32)
         edge_index = torch.tensor(edge_index, dtype=torch.long)
         edge_attr = torch.tensor(edge_attr, dtype=torch.long).unsqueeze(1)
 
+        # Return the initialized data object (excludes a ground-truth label)
         return Data(
             x=node_features,
             edge_index=edge_index,
             edge_attr=edge_attr,
-            num_nodes=len(curr_nodes),
+            num_nodes=len(upstreams),
         )
 
 
 class NukeGraphDataset(Dataset):
-    def __init__(self, root_dir: str, transform=None, should_download=False):
+    def __init__(
+        self,
+        root_dir=None,
+        transform=None,
+        force_rebuild=False,
+    ):
         super().__init__(root=root_dir, transform=transform)
         self.root_dir = root_dir
-        self.node_type_to_idx = {}
         self.file_paths = []
 
+        self.processed_files = []
         self.examples = []
-        self.feature_config = {"numerical": [1, 2, 3]}
 
-        self.all_features = defaultdict(list)
+        self.processed_graphs_file = os.path.join(DATA_CACHE_PATH, "process_graphs.pt")
+        self.metadata_file = os.path.join(DATA_CACHE_PATH, "graph_metadata.json")
 
-        self.feature_stats = {
-            "min_vals": None,
-            "max_vals": None,
-            "means": None,
-            "stds": None,
-        }
+        # Load the Nuke node type vocabulary.
+        self.vocabulary_path = os.path.join(DATA_CACHE_PATH, VOCAB)
+        self.vocab = Vocabulary(self.vocabulary_path)
 
-        self.converter = NukeGraphConverter(self.feature_config)
-        self.validity_mask = None
+        self.graph_builder = NukeGraphBuilder(self.vocab)
 
-        if should_download:
-            print("Currently ignoring the request to download remote files!")
-            # utilities.download_remote_files()
+        if not force_rebuild:
+            self._load_cache()
 
-        for file in os.listdir(root_dir):
+    def _load_cache(self):
+        # Check if the files have already been processed.
+        if os.path.exists(self.metadata_file):
+            with open(self.metadata_file, "r") as f:
+                self.processed_files = json.load(f).get("processed_files", [])
+
+        # Load processed graph data.
+        if os.path.exists(self.processed_graphs_file):
+            saved_data = torch.load(self.processed_graphs_file, weights_only=False)
+            self.examples = saved_data["examples"]
+
+    def process_all_graphs_in_dir(self, target_dir):
+        for file in os.listdir(target_dir):
             if file.endswith(".json"):
-                self.file_paths.append(os.path.join(root_dir, file))
+                self.file_paths.append(os.path.join(target_dir, file))
 
-        # Build node type vocabulary prior to vocab.
-        self._perform_dataset_preprocessing()
-        self._populate_validity_mask()
-        self._process_all_graphs()
+        for file_path in tqdm(self.file_paths, desc="Processing all graphs"):
+            # We've already processed this file.
+            if file_path in self.processed_files:
+                continue
 
-    def _populate_validity_mask(self):
-        self.validity_mask = torch.ones(len(self.node_type_to_idx), dtype=torch.bool)
-        for node_type, idx in self.node_type_to_idx.items():
-            if node_type not in INVALID_NODE_CLASSES:
-                self.validity_mask[idx] = False
-
-    def _perform_dataset_preprocessing(self):
-        for file_path in tqdm(self.file_paths, desc="Preprocessing all graphs..."):
             with open(file_path, "r") as f:
                 data = json.load(f)
 
-            self._build_node_type_vocab(data)
+            graph_examples = self.generate_graph_training_examples(data)
+            self.examples.extend(graph_examples)
+            self.processed_files.append(file_path)
 
-    def _get_all_node_features(self, data):
+        self.save_graph_state()
+
+        log.info(f"Processed {len(self.examples)} total examples")
+
+    def save_graph_state(self):
+        # Ensure the metadata parent dir exists.
+        os.makedirs(DATA_CACHE_PATH, exist_ok=True)
+
+        torch.save(
+            {
+                "examples": self.examples,
+            },
+            self.processed_graphs_file,
+            pickle_protocol=pickle.HIGHEST_PROTOCOL,
+        )
+        self._save_metadata()
+        self.vocab.save(self.vocabulary_path)
+
+    def _save_metadata(self):
+        with open(self.metadata_file, "w") as f:
+            json.dump(
+                {
+                    "processed_files": self.processed_files,
+                },
+                f,
+                indent=2,
+            )
+
+    def generate_graph_training_examples(
+        self, data, min_context=3, max_context=25, stride=3
+    ):
         root_group = data[NukeScript.ROOT]
         nodes = root_group[NukeScript.NODES]
 
-        for node_data in nodes.values():
-            node_features = get_node_features(node_data, self.node_type_to_idx)
-            self.all_features[data["script_name"]].append(node_features)
+        graph_node_data = list(nodes.values())
+        examples = []
 
-    def _build_node_type_vocab(self, data):
-        for group_data in data.values():
-            if isinstance(group_data, dict) and "nodes" in group_data:
-                for node in group_data["nodes"].values():
-                    node_type = node["node_type"]
-                    if node_type not in self.node_type_to_idx:
-                        self.node_type_to_idx[node_type] = len(self.node_type_to_idx)
+        for i in reversed(range(min_context, len(graph_node_data), stride)):
+            # This is the prediction node.
+            target_node_data = graph_node_data[i]
+            graph_data = self.graph_builder.create_graph_data(
+                data, target_node_data, update_vocab=True
+            )
+            if not graph_data:
+                continue
 
-    def _process_all_graphs(self):
-        """Process all graphs and store their examples."""
-        for file_path in tqdm(self.file_paths, desc="Processing all graphs"):
-            with open(file_path, "r") as f:
-                data = json.load(f)
-            graph_examples = self._process_graph(data)
+            # Ensure we include graph-level ground-truth label.
+            target = torch.tensor(
+                self.vocab.get_idx(target_node_data["node_type"]),
+                dtype=torch.long,
+            )
+            graph_data.y = target
 
-            self.examples.extend(graph_examples)
+            graph_data.validate(raise_on_error=True)
 
-        print(f"Processed {len(self.examples)} total examples")
+            examples.append(graph_data)
+
+        return examples
 
     def len(self):
         return len(self.file_paths)
@@ -180,130 +270,71 @@ class NukeGraphDataset(Dataset):
         with open(file_path, "r") as f:
             data = json.load(f)
 
-        graph_data = self._process_graph(data)
+        graph_data = self.generate_graph_training_examples(data)
 
         if self.transform is not None:
             graph_data = self.transform(graph_data)
 
         return graph_data
 
-    def _normalize_seq_features(self, raw_features, numerical_indices):
-        features = np.array(raw_features)
-        normalized = features.copy()
 
-        if len(features) > 1:
-            for idx in numerical_indices:
-                values = features[:, idx]
-                mean = np.mean(values)
-                std = np.std(values)
+def get_upstream_nodes(
+    all_nodes_dict, start_node_dict, max_context=1000, include_start=False
+):
+    queue = deque([start_node_dict])
+    upstream_nodes = [start_node_dict] if include_start else []
+    visited = {start_node_dict["name"]}
 
-                # Avoid division by zero
-                if std > 1e-6:
-                    normalized[:, idx] = (values - mean) / std
-                else:
-                    normalized[:, idx] = values - mean
+    while queue and len(upstream_nodes) < max_context:
+        node_dict = queue.popleft()
 
-        return normalized.tolist()
+        if node_dict != start_node_dict:
+            upstream_nodes.append(node_dict)
 
-    def _get_upstream_nodes(self, all_nodes_dict, start_node_dict, max_context):
-        """Generate a correct list of upstream nodes based on input connections."""
-        queue = deque([start_node_dict])
-        upstream_nodes = []
-        visited = {start_node_dict["name"]}
-
-        while queue and len(upstream_nodes) < max_context:
-            node_dict = queue.popleft()
-
-            if node_dict != start_node_dict:
-                upstream_nodes.append(node_dict)
-
-            for upstream_name in node_dict.get("input_connections", []):
-                if upstream_name is None:
-                    continue
-
-                if upstream_name in visited:
-                    continue
-
-                if upstream_name not in all_nodes_dict:
-                    continue
-
-                upstream_dict = all_nodes_dict[upstream_name]
-                visited.add(upstream_name)
-                queue.append(upstream_dict)
-
-        return upstream_nodes
-
-    def _process_graph(self, data, min_context=3, max_context=25, stride=3):
-        root_group = data[NukeScript.ROOT]
-        nodes = root_group[NukeScript.NODES]
-        ordered_nodes = list(nodes.items())
-        examples = []
-
-        for i in reversed(range(min_context, len(ordered_nodes), stride)):
-            # This is the prediction node.
-            start_node = ordered_nodes[i][1]
-            upstreams = self._get_upstream_nodes(nodes, start_node, max_context)
-            if len(upstreams) < min_context:
+        for upstream_name in node_dict.get("input_connections", []):
+            if upstream_name is None:
                 continue
 
-            raw_features = []
-            for node_data in upstreams:
-                raw_features.append(get_node_features(node_data, self.node_type_to_idx))
+            if upstream_name in visited:
+                continue
 
-            normalized_features = self._normalize_seq_features(
-                raw_features,
-                self.feature_config["numerical"],
-            )
+            if upstream_name not in all_nodes_dict:
+                continue
 
-            edge_index = [[], []]
-            edge_attr = []
+            upstream_dict = all_nodes_dict[upstream_name]
+            visited.add(upstream_name)
+            queue.append(upstream_dict)
 
-            # Map node IDs to indices
-            node_name_to_idx = {
-                node_dict["name"]: idx for idx, node_dict in enumerate(upstreams)
-            }
-
-            for node_data in upstreams:
-                curr_idx = node_name_to_idx[node_data["name"]]
-
-                for input_idx, input_node in enumerate(
-                    node_data.get("input_connections", [])
-                ):
-                    if input_node in node_name_to_idx:
-                        source_idx = node_name_to_idx[input_node]
-                        edge_index[0].append(source_idx)
-                        edge_index[1].append(curr_idx)
-                        edge_attr.append(input_idx)
-
-            # Create tensors
-            node_features = torch.tensor(normalized_features, dtype=torch.float32)
-            edge_index = torch.tensor(edge_index, dtype=torch.long)
-
-            edge_attr = torch.tensor(edge_attr, dtype=torch.long).unsqueeze(1)
-
-            target = torch.tensor(
-                self.node_type_to_idx[ordered_nodes[i][1]["node_type"]],
-                dtype=torch.long,
-            )
-
-            examples.append(
-                Data(
-                    x=node_features,
-                    edge_index=edge_index,
-                    edge_attr=edge_attr,
-                    y=target,
-                    num_nodes=len(upstreams),
-                )
-            )
-
-        return examples
+    return upstream_nodes
 
 
-def get_node_features(node_data, node_type_to_idx):
-    is_merge = 1 if node_data["node_type"] in {"Merge2", "Merge"} else 0
+def normalize_features(raw_features, numerical_indices=None):
+    if numerical_indices is None:
+        numerical_indices = [1, 2]
+
+    features = np.array(raw_features)
+    normalized = features.copy()
+
+    if len(features) > 1:
+        for idx in numerical_indices:
+            values = features[:, idx]
+            mean = np.mean(values)
+            std = np.std(values)
+
+            if std > 1e-6:
+                normalized[:, idx] = (values - mean) / std
+            else:
+                normalized[:, idx] = values - mean
+
+    return normalized.tolist()
+
+
+def get_node_features(node_data, vocab: Vocabulary):
+    node_type = node_data["node_type"]
+    is_merge = 1 if node_type in {"Merge2", "Merge"} else 0
     return [
-        # Categorical node infomration.
-        node_type_to_idx[node_data["node_type"]],  # Node Type
+        # Categorical node information.
+        vocab.get_idx(node_type),
         # Numerical node information.
         # These are normalized in graph preprocessing.
         node_data["inputs"],

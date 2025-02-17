@@ -5,7 +5,7 @@ set -e
 python3 -m venv inference_venv
 source inference_venv/bin/activate
 
-# Upgrade pip
+# Install requirements (excluding pytorch)
 inference_venv/bin/python3 -m pip install --upgrade pip
 inference_venv/bin/python3 -m pip install -r ../requirements.txt
 

@@ -27,9 +27,7 @@ class InferenceLauncher:
 
         cmd = [str(self.python_path), INFERENCE_SCRIPT_PATH, str(port)]
 
-        log.info(
-            f"Started the inference subprocess..."
-        )
+        log.info(f"Started the inference subprocess...")
         self.process = subprocess.Popen(
             cmd,
             env=env,
@@ -67,24 +65,17 @@ class InferenceLauncher:
         env = os.environ.copy()
 
         result = subprocess.run(
-            [f"{self.venv_path}/bin/python3", "-V"],
-            capture_output=True,
-            text=True
+            [f"{self.venv_path}/bin/python3", "-V"], capture_output=True, text=True
         )
 
         version = result.stdout.strip().split()[1]
         major, minor, _ = version.split(".")
         python_dir = f"python{major}.{minor}"
 
-        python_path = os.path.join(
-            self.venv_path,
-            "lib",
-            python_dir,
-            "site-packages"
-        )
+        python_path = os.path.join(self.venv_path, "lib", python_dir, "site-packages")
 
         paths = [python_path]
-        torch_location = os.getenv('PYTORCH_INSTALL')
+        torch_location = os.getenv("PYTORCH_INSTALL")
         if torch_location:
             target = "lib64" if "lib64" in torch_location else "lib"
             for lib_dir in ["lib", "lib64"]:

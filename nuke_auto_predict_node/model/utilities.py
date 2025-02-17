@@ -4,6 +4,8 @@ from dotenv import load_dotenv
 from subprocess import Popen, PIPE
 from tqdm import tqdm
 
+from .constants import VOCAB_PATH, MODEL_PATH
+
 
 def json_back_to_nk():
     import glob
@@ -77,13 +79,12 @@ def download_file(filename, local_path):
     proc.wait()
 
 
-def save_model_checkpoint(model, dataset, save_dir, model_name: str, scaler=None):
+def save_model_checkpoint(model, model_name):
     import torch
 
-    save_path = os.path.join(save_dir, model_name)
-    os.makedirs(save_path, exist_ok=True)
+    os.makedirs(MODEL_PATH, exist_ok=True)
 
-    model_path = os.path.join(save_path, f"{model_name}_model.pt")
+    model_path = os.path.join(MODEL_PATH, f"{model_name}_model.pt")
     checkpoint = {
         "num_features": model.num_features,
         "state_dict": model.state_dict(),
@@ -93,37 +94,20 @@ def save_model_checkpoint(model, dataset, save_dir, model_name: str, scaler=None
         "dropout": model.dropout,
     }
 
-    if scaler is not None:
-        checkpoint["scaler_state"] = scaler.state_dict()
-
     torch.save(checkpoint, model_path)
-
-    vocab_path = os.path.join(save_path, "vocab.json")
-    with open(vocab_path, "w") as f:
-        json.dump(
-            {
-                "node_type_to_idx": dataset.node_type_to_idx,
-                "num_node_types": len(dataset.node_type_to_idx),
-            },
-            f,
-            indent=2,
-        )
-
-    print(f"Model and vocabulary saved to {save_path}")
+    print(f"Model saved to {MODEL_PATH}")
 
 
-def load_model_checkpoint(model_dir: str, model_name: str, device="cuda"):
+def load_model_checkpoint(model_name: str, device="cuda"):
     import torch
 
-    save_path = os.path.join(model_dir, model_name)
-    model_path = os.path.join(save_path, f"{model_name}_model.pt")
-    vocab_path = os.path.join(save_path, "vocab.json")
+    model_checkpoint_path = os.path.join(MODEL_PATH, f"{model_name}_model.pt")
 
     # Load checkpoint
-    checkpoint = torch.load(model_path, map_location=device)
+    checkpoint = torch.load(model_checkpoint_path, map_location=device)
 
     # Load vocabulary
-    with open(vocab_path, "r") as f:
+    with open(VOCAB_PATH, "r") as f:
         vocab = json.load(f)
 
     # Initialize model

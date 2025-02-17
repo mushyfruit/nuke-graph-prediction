@@ -8,6 +8,7 @@ from .launcher import launch_inference_service
 from .request_handler import get_request_handler
 from .ui import prediction_panel
 
+
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
@@ -16,11 +17,11 @@ _model_vocabulary = None
 
 def load_model_vocab():
     global _model_vocabulary
-    model_path = os.path.join(
-        os.path.dirname(__file__), "model", "checkpoints", "nuke_predictor_gat"
-    )
-    vocab_path = os.path.join(model_path, "vocab.json")
+    from . import model_cnst
+
+    vocab_path = os.path.join(model_cnst.DATA_CACHE_PATH, model_cnst.VOCAB)
     if not os.path.exists(vocab_path):
+        log.error("No vocab file found at {}".format(vocab_path))
         return
 
     with open(vocab_path, "r") as f:
@@ -37,10 +38,10 @@ def nuke_startup():
         prediction_panel.register_prediction_panel()
         nuke.addKnobChanged(predict_selected)
 
-        nuke.menu('Nuke').addCommand(
-            'Recommendation/PerformTest',
-            'nuke_auto_predict_node.recommendation.perform_recommendation()',
-            'ctrl+shift+t'
+        nuke.menu("Nuke").addCommand(
+            "Recommendation/PerformTest",
+            "nuke_auto_predict_node.recommendation.perform_recommendation()",
+            "ctrl+shift+t",
         )
 
     except Exception as e:
@@ -99,7 +100,7 @@ def traverse_upstream(node, target_nodes=None, visited=None, length=0, max_lengt
     return target_nodes
 
 
-def serialize_node(node):
+def serialize_node(node, include_parameters=False):
     dependency_flag = nuke.INPUTS | nuke.HIDDEN_INPUTS
     ancestors = node.dependencies(dependency_flag)
 
@@ -108,8 +109,10 @@ def serialize_node(node):
         "node_type": node.Class(),
         "inputs": node.inputs(),
         "input_connections": [ancestor.name() for ancestor in ancestors],
-        "parameters": get_all_parameters(node),
     }
+
+    if include_parameters:
+        json_node["parameters"] = get_all_parameters(node)
 
     return json_node
 
@@ -144,15 +147,16 @@ def get_all_parameters(node):
 
 
 def serialize_upstream():
-    node = nuke.selectedNode()
-    if not node:
+    selected_node = nuke.selectedNode()
+    if not selected_node:
         nuke.message("Please select a node!")
         return
 
-    serialized_nodes = traverse_upstream(node)
+    serialized_nodes = traverse_upstream(selected_node)
     return {
         "script_name": os.path.basename(nuke.scriptName()),
         "root": {"name": "root", "parent": None, "nodes": serialized_nodes},
+        "start_node": selected_node.name(),
     }
 
 
@@ -161,6 +165,8 @@ def perform_recommendation():
         serialized_graph_data = serialize_upstream()
     except (ValueError, RuntimeError):
         return
+
+    log.info(serialized_graph_data)
 
     if len(serialized_graph_data["root"]["nodes"]) <= 3:
         return
