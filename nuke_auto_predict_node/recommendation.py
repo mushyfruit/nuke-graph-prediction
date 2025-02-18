@@ -4,9 +4,7 @@ import logging
 
 import nuke
 
-from .launcher import launch_inference_service
 from .request_handler import get_request_handler
-from .ui import prediction_panel
 
 
 log = logging.getLogger(__name__)
@@ -26,32 +24,6 @@ def load_model_vocab():
 
     with open(vocab_path, "r") as f:
         _model_vocabulary = json.load(f).get("node_type_to_idx", {})
-
-
-def nuke_startup():
-    """Initialize ML service on Nuke startup"""
-    try:
-        load_model_vocab()
-
-        launch_inference_service()
-
-        prediction_panel.register_prediction_panel()
-        nuke.addKnobChanged(predict_selected)
-
-        nuke.menu("Nuke").addCommand(
-            "Recommendation/PerformTest",
-            "nuke_auto_predict_node.recommendation.perform_recommendation()",
-            "ctrl+shift+t",
-        )
-
-    except Exception as e:
-        nuke.message(f"Failed to start ML service: {str(e)}")
-
-
-def predict_selected():
-    if nuke.thisKnob().name() != "selected":
-        return
-    perform_recommendation()
 
 
 def is_node_disabled(node):
@@ -146,11 +118,14 @@ def get_all_parameters(node):
     return parameter_dict
 
 
-def serialize_upstream():
-    selected_node = nuke.selectedNode()
-    if not selected_node:
-        nuke.message("Please select a node!")
-        return
+def serialize_upstream(node_name=None):
+    if node_name is None:
+        selected_node = nuke.selectedNode()
+        if not selected_node:
+            nuke.message("Please select a node!")
+            return
+    else:
+        selected_node = nuke.toNode(node_name)
 
     serialized_nodes = traverse_upstream(selected_node)
     return {
@@ -160,9 +135,9 @@ def serialize_upstream():
     }
 
 
-def perform_recommendation():
+def perform_recommendation(node_name=None):
     try:
-        serialized_graph_data = serialize_upstream()
+        serialized_graph_data = serialize_upstream(node_name=node_name)
     except (ValueError, RuntimeError):
         return
 
@@ -170,11 +145,18 @@ def perform_recommendation():
         return
 
     handler = get_request_handler()
-    panel_instance = prediction_panel.get_panel_instance()
 
     log.info("Making prediction POST request...")
     prediction = handler.post("predict", serialized_graph_data)
     log.info(f"Prediction: {prediction}")
 
-    if panel_instance:
-        panel_instance.show_prediction(prediction)
+    if prediction:
+        from .ui import prediction_panel
+
+        panel_instance = prediction_panel.get_panel_instance()
+
+        if not panel_instance:
+            return
+
+        selected_node = nuke.selectedNode()
+        panel_instance.update_prediction_state(selected_node.fullName(), prediction)

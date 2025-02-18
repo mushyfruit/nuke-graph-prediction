@@ -33,21 +33,8 @@ def get_panel_instance():
     return _g_prediction_panel
 
 
-def register_prediction_panel():
-    _register_recommendation_panel()
-
-
-def _register_recommendation_panel():
-    pane_menu = nuke.menu("Pane")
-    pane_menu.addCommand("Node Recommendation✨", show_prediction_panel)
-    nukescripts.registerPanel("mushyfruit.node_recommendation", show_prediction_panel)
-
-
 def show_prediction_panel():
-    global _g_prediction_panel
-
-    if not _g_prediction_panel:
-        _g_prediction_panel = PredictionPanel()
+    panel = get_panel_instance()
 
     existing_pane = None
     for tab_name in BUILT_IN_TABS:
@@ -55,7 +42,7 @@ def show_prediction_panel():
         if existing_pane:
             break
 
-    return _g_prediction_panel.addToPane(pane=existing_pane)
+    return panel.addToPane(pane=existing_pane)
 
 
 class PredictionPanel(nukescripts.panels.PythonPanel):
@@ -79,9 +66,12 @@ class PredictionPanel(nukescripts.panels.PythonPanel):
         for knob in knob_list:
             self.addKnob(knob)
 
-    def show_prediction(self, prediction: Dict[str, List[Tuple[str, float]]]):
+    def update_prediction_state(
+            self, selected_node: str, prediction: Dict[str, List[Tuple[str, float]]]
+    ):
         prediction_widget = self.prediction_widget.getObject()
         if prediction_widget:
+            prediction_widget.update_selected_node(selected_node)
             prediction_widget.update_prediction(prediction)
 
 
@@ -91,6 +81,7 @@ class PredictionWidget(QtWidgets.QWidget):
         self.setup_ui()
         self._stored_nuke_files = []
         self._predictions = None
+        self._current_node_name = None
 
         self.request_handler = get_request_handler()
 
@@ -285,6 +276,7 @@ class PredictionWidget(QtWidgets.QWidget):
         self.create_button.setEnabled(False)
 
         self.refresh_button = QtWidgets.QPushButton("Refresh")
+        self.refresh_button.clicked.connect(self._on_refresh_button_clicked)
         button_layout.addWidget(self.refresh_button)
 
         self.status_label = QtWidgets.QLabel("")
@@ -295,6 +287,13 @@ class PredictionWidget(QtWidgets.QWidget):
         prediction_layout.addLayout(button_layout)
         prediction_layout.addWidget(self.status_label)
 
+    def _on_refresh_button_clicked(self):
+        if self._current_node_name is None:
+            return
+
+        from ..recommendation import perform_recommendation
+        perform_recommendation(self._current_node_name)
+
     def _update_prediction_tree(self):
         """Update the prediction list widget with current predictions."""
         self.prediction_tree.clear()
@@ -302,6 +301,10 @@ class PredictionWidget(QtWidgets.QWidget):
             item = QtWidgets.QTreeWidgetItem([node_type, f"{confidence_score:.2f}"])
             item.setTextAlignment(1, QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
             self.prediction_tree.addTopLevelItem(item)
+
+    def update_selected_node(self, selected_node):
+        self._current_node_name = selected_node
+        self.selected_node_label.setText("Selected Node: {}".format(selected_node))
 
     def update_prediction(self, node_prediction: Dict[str, List[Tuple[str, float]]]):
         """Get predictions from the GAT model for the selected node.
@@ -364,12 +367,20 @@ class FileInputWidget(QtWidgets.QWidget):
         layout.addWidget(self.browse_button)
 
     def browse_folders(self):
-        folder_path = QtWidgets.QFileDialog.getExistingDirectory(
-            self, "Select Folder", "", QtWidgets.QFileDialog.ShowDirsOnly
-        )
-        if folder_path:
-            self.line_edit.setText(folder_path)
-            self.folder_selected.emit(folder_path)
+        file_dialog = QtWidgets.QFileDialog(self)
+        file_dialog.setOption(QtWidgets.QFileDialog.DontUseNativeDialog, True)
+        file_dialog.setFileMode(QtWidgets.QFileDialog.DirectoryOnly)
+        file_dialog.setWindowTitle("Select Folder")
+
+        file_dialog.setOption(QtWidgets.QFileDialog.ShowDirsOnly, False)
+        file_dialog.setViewMode(QtWidgets.QFileDialog.Detail)
+
+        if file_dialog.exec_() == QtWidgets.QFileDialog.Accepted:
+            selected_dirs = file_dialog.selectedFiles()
+            if selected_dirs:
+                folder_path = selected_dirs[0]
+                self.line_edit.setText(folder_path)
+                self.folder_selected.emit(folder_path)
 
     def get_file_path(self):
         return self.line_edit.text()

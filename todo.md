@@ -25,7 +25,9 @@
 - [x] Python Panel Implementation
 - [x] Train from the Python Panel?
 - [x] Easy way to kick off training?
-- [] Ensure async requests.
+- [x] Ensure async requests.
+- [x] Wire up final UI elements - Selected Node, Fix Selection Dialog, etc. 
+- [x] Implement refresh.
 
 # setup notes
 - [ ] Automate for user.
