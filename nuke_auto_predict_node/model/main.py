@@ -7,7 +7,7 @@ import copy
 import time
 from dataclasses import dataclass
 
-from .constants import MODEL_NAME, MODEL_DATA_FOLDER
+from .constants import MODEL_NAME, MODEL_DATA_FOLDER, TrainingStatus, TrainingPhase
 from .utilities import save_model_checkpoint, load_model_checkpoint
 from .dataset import NukeGraphDataset
 from .model import NukeGATPredictor
@@ -79,7 +79,9 @@ def setup_dataloaders(dataset: NukeGraphDataset, config: TrainingConfig):
     return train_loader, val_loader
 
 
-def train_model_gat(dataset, model, config=None, memory_fraction=None):
+def train_model_gat(
+    dataset, model, config=None, memory_fraction=None, status_queue=None
+):
     if config is None:
         config = TrainingConfig()
 
@@ -132,6 +134,11 @@ def train_model_gat(dataset, model, config=None, memory_fraction=None):
     best_val_accuracy = 0
     best_model_state = None
     start_time = time.time()
+
+    if status_queue:
+        status_queue.put(
+            TrainingStatus(TrainingPhase.TRAINING, label="Beginning model training...")
+        )
 
     for epoch in range(config.epochs):
         # Set the model to 'training' mode.
@@ -228,6 +235,21 @@ def train_model_gat(dataset, model, config=None, memory_fraction=None):
         )
         print(f"  Val Loss: {avg_val_loss:.4f}, Val Accuracy: {val_accuracy:.2f}%")
         print(f"  Learning Rate: {current_lr:.2e}")
+
+        if status_queue:
+            current_epoch = epoch + 1
+            status_queue.put(
+                TrainingStatus(
+                    TrainingPhase.TRAINING,
+                    current_epoch=current_epoch,
+                    total_epochs=config.epochs,
+                    training_loss=avg_train_loss,
+                    training_accuracy=train_accuracy,
+                    validation_accuracy=val_accuracy,
+                    progress=float(current_epoch / config.epochs),
+                    label=f"Training Model: {current_epoch}/{config.epochs}",
+                )
+            )
 
     training_time = time.time() - start_time
     print(f"\nTraining completed in {training_time:.2f} seconds")

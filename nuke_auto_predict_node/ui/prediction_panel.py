@@ -6,6 +6,7 @@ import nukescripts
 from PySide2 import QtWidgets, QtCore
 
 from ..request_handler import get_request_handler
+from ..model.constants import TrainingPhase
 
 import logging
 
@@ -88,6 +89,12 @@ class PredictionWidget(QtWidgets.QWidget):
         self.setup_ui()
         self._stored_nuke_files = []
 
+        self.request_handler = get_request_handler()
+
+        self.status_timer = QtCore.QTimer()
+        self.status_timer.timeout.connect(self._check_training_status)
+        self.status_timer.setInterval(1000)
+
     def setup_ui(self):
         main_layout = QtWidgets.QVBoxLayout(self)
         self.tab_widget = QtWidgets.QTabWidget(self)
@@ -129,6 +136,10 @@ class PredictionWidget(QtWidgets.QWidget):
     def _clear_status_label(self):
         self.status_label.setText("")
         self.status_label.setHidden(True)
+
+    def _update_progress(self, float_value):
+        value = int(float_value * 100)
+        self.training_progress_bar.setValue(value)
 
     def _setup_training_page(self):
         self.training_page = QtWidgets.QWidget()
@@ -187,14 +198,60 @@ class PredictionWidget(QtWidgets.QWidget):
         training_layout.addLayout(button_layout)
 
     def _on_training_btn_clicked(self):
-        handler = get_request_handler()
         if not self._stored_nuke_files:
             self._update_status_label(
                 "Unable to start training. Please select a valid directory."
             )
             return
 
-        handler.kickoff_training(self._stored_nuke_files)
+        response = self.request_handler.kickoff_training(self._stored_nuke_files)
+        if response["status"] == TrainingPhase.SERIALIZING.value:
+            self._update_status_label(response.get("label", ""))
+            self.status_timer.start()
+            self.training_btn.setEnabled(False)
+        else:
+            self._update_status_label("Error encountered! Please check logs.")
+            log.error(f"Failed to begin model training! {response}")
+
+    def _check_training_status(self):
+        try:
+            if not self.status_timer.isActive():
+                return
+
+            response = self.request_handler.get("training_status", custom_timeout=100)
+            status = response["status"]
+
+            if status == TrainingPhase.COMPLETE.value:
+                self.status_timer.stop()
+                self.training_btn.setEnabled(True)
+
+            if response.get("label"):
+                self._update_status_label(response["label"])
+
+            if response.get("progress"):
+                self._update_progress(response["progress"])
+
+            if response.get("current_epoch"):
+                self.epoch_value.setText(str(response["current_epoch"]))
+
+            if response.get("training_loss"):
+                self.loss_value.setText(f"{response['training_loss']:.2f}")
+
+            if response.get("training_accuracy"):
+                self.training_accuracy_value.setText(
+                    f"{response['training_accuracy']:.2f}%"
+                )
+
+            if response.get("validation_accuracy"):
+                self.validation_accuracy_value.setText(
+                    f"{response['validation_accuracy']:.2f}%"
+                )
+
+        except Exception as e:
+            log.error(f"Error checking training status: {e}")
+            self._update_status_label(f"Error checking status: {str(e)}")
+            self.status_timer.stop()
+            self.training_btn.setEnabled(True)
 
     def _setup_prediction_page(self):
         self.prediction_page = QtWidgets.QWidget()

@@ -76,10 +76,25 @@ class RequestHandler:
                 response_body = response.read().decode("utf-8")
                 return json.loads(response_body)
 
+    def get(
+        self,
+        endpoint: str,
+        custom_timeout: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        url = f"{self.base_url}{endpoint}"
+
+        headers = {"Accept": "application/json"}
+        request = urllib.request.Request(url, headers=headers, method="GET")
+
+        with self._handle_request_error():
+            timeout = custom_timeout if custom_timeout is not None else self.timeout
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                response_body = response.read().decode("utf-8")
+                return json.loads(response_body)
+
     def kickoff_training(self, file_paths):
         data = {
             "file_paths": file_paths,
-            "command": "train",
         }
 
         log.info("Posted to train.")
