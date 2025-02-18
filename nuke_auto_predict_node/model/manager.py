@@ -154,20 +154,23 @@ class NukeNodePredictor:
 
         # Disable gradient computation.
         with torch.no_grad():
+            # Get predictions over all possible node types.
             predictions = self.model(test_data)
+
+            # Convert logits to probabilities.
             probabilities = torch.nn.functional.softmax(predictions, dim=1)
-            top_probs, top_indices = torch.topk(probabilities, k=5)
 
-            results = []
-            for sample_probs, sample_indices in zip(top_probs, top_indices):
-                node_predictions = []
-                for idx, prob in zip(sample_indices, sample_probs):
-                    node_type = self.vocab.get_type(idx.item())
-                    probability = prob.item()
-                    node_predictions.append((node_type, probability))
-                results.append(node_predictions)
+            # Select top X from probabilities. [1, 10]
+            top_probs, top_indices = torch.topk(probabilities, k=10)
 
-        return results
+            node_predictions = []
+            for idx, prob in zip(top_indices[0], top_probs[0]):
+                # Convert the idx to Nuke node type name.
+                node_type = self.vocab.get_type(idx.item())
+                probability = prob.item()
+                node_predictions.append((node_type, probability))
+
+        return node_predictions
 
     def parse_and_serialize_scripts(self, script_paths, output_dir=None):
         if output_dir is None:

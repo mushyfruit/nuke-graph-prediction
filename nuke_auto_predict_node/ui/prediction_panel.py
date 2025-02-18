@@ -10,6 +10,8 @@ from ..model.constants import TrainingPhase
 
 import logging
 
+from typing import List, Tuple, Dict
+
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
@@ -77,10 +79,10 @@ class PredictionPanel(nukescripts.panels.PythonPanel):
         for knob in knob_list:
             self.addKnob(knob)
 
-    def show_prediction(self, predictions):
+    def show_prediction(self, prediction: Dict[str, List[Tuple[str, float]]]):
         prediction_widget = self.prediction_widget.getObject()
         if prediction_widget:
-            prediction_widget.update_predictions(predictions)
+            prediction_widget.update_prediction(prediction)
 
 
 class PredictionWidget(QtWidgets.QWidget):
@@ -88,6 +90,7 @@ class PredictionWidget(QtWidgets.QWidget):
         super().__init__(parent=parent)
         self.setup_ui()
         self._stored_nuke_files = []
+        self._predictions = None
 
         self.request_handler = get_request_handler()
 
@@ -295,17 +298,40 @@ class PredictionWidget(QtWidgets.QWidget):
     def _update_prediction_tree(self):
         """Update the prediction list widget with current predictions."""
         self.prediction_tree.clear()
-        for node_type, confidence_score in self.predictions:
+        for node_type, confidence_score in self._predictions:
             item = QtWidgets.QTreeWidgetItem([node_type, f"{confidence_score:.2f}"])
             item.setTextAlignment(1, QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
             self.prediction_tree.addTopLevelItem(item)
 
-    def update_predictions(self, node_predictions):
-        """Get predictions from the GAT model for the selected node."""
-        if not node_predictions:
+    def update_prediction(self, node_prediction: Dict[str, List[Tuple[str, float]]]):
+        """Get predictions from the GAT model for the selected node.
+
+        :param node_prediction: Dictionary containing list of (node_type, confidence_score) tuples.
+
+            {
+                'prediction': [
+                    ['Card2', 0.24],
+                    ['Grade', 0.14],
+                    ['Merge2', 0.12],
+                    ['Transform', 0.06],
+                    ['Defocus', 0.05],
+                ]
+            }
+        """
+        if not node_prediction:
             return
 
-        self.predictions = node_predictions["prediction"][0]
+        predictions = node_prediction.get("prediction")
+        if predictions is None:
+            log.error(
+                f"Unable to retrieve valid prediction from response: {node_prediction}"
+            )
+            return
+
+        # Update the stored predictions.
+        self._predictions = predictions
+
+        # Update the prediction tree UI.
         self._update_prediction_tree()
         self.status_label.setText("Predictions updated successfully")
 

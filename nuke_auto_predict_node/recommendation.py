@@ -166,8 +166,6 @@ def perform_recommendation():
     except (ValueError, RuntimeError):
         return
 
-    log.info(serialized_graph_data)
-
     if len(serialized_graph_data["root"]["nodes"]) <= 3:
         return
 
@@ -176,7 +174,7 @@ def perform_recommendation():
 
     log.info("Making prediction POST request...")
     prediction = handler.post("predict", serialized_graph_data)
-
     log.info(f"Prediction: {prediction}")
+
     if panel_instance:
         panel_instance.show_prediction(prediction)

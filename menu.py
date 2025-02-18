@@ -1,2 +1,3 @@
 from nuke_auto_predict_node import nuke_auto_predict_node
+
 nuke_auto_predict_node.nuke_startup()

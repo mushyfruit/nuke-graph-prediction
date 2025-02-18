@@ -1,7 +1,7 @@
 import json
 import logging
 import urllib.request
-from urllib.error import URLError
+from urllib.error import URLError, HTTPError
 
 from contextlib import contextmanager
 from typing import Dict, Any, Optional
@@ -40,7 +40,7 @@ class RequestHandler:
     def _handle_request_error(self):
         try:
             yield
-        except URLError as e:
+        except (URLError, HTTPError) as e:
             error_body = None
             if hasattr(e, "read"):
                 error_body = e.read().decode("utf-8")

@@ -7,12 +7,35 @@ import traceback
 from model.dataset import NukeGraphBuilder
 from model.manager import NukeNodePredictor
 
-from typing import List
+from typing import List, Dict, Any, Optional, Tuple
 
 app = FastAPI()
 
 predictor = NukeNodePredictor()
 converter = NukeGraphBuilder(predictor.vocab)
+
+
+class Node(BaseModel):
+    name: str
+    node_type: str
+    inputs: int
+    input_connections: List[str]
+
+
+class Root(BaseModel):
+    name: str
+    parent: Optional[str] = None
+    nodes: Dict[str, Node]
+
+
+class PredictionRequest(BaseModel):
+    start_node: str
+    script_name: str
+    root: Root
+
+
+class PredictionResponse(BaseModel):
+    prediction: List[Tuple[str, float]]
 
 
 class TrainingRequest(BaseModel):
@@ -40,24 +63,15 @@ async def get_training_status():
     return training_status.to_dict()
 
 
-@app.post("/predict")
-async def predict(request: Request):
+@app.post("/predict", response_model=PredictionResponse)
+async def predict(request: PredictionRequest):
     """Prediction endpoint"""
     try:
-        data = await request.json()
-
-        # get start node name
-
-        start_node_name = data.get("start_node_name")
-        nodes = data.get("root", {})["nodes"]
-        start_node = nodes[start_node_name]
-
-        # Use the dataset class to convert JSON representations to PYG.
-        pyg_graph_data = converter.create_graph_data(data, start_node)
+        nodes = request.root.nodes
+        start_node = nodes[request.start_node].model_dump()
+        pyg_graph_data = converter.create_graph_data(request.model_dump(), start_node)
         prediction = predictor.predict(pyg_graph_data)
-        result = {"prediction": prediction}
-
-        return result
+        return PredictionResponse(prediction=prediction)
     except Exception as e:
         error_details = {"error": str(e), "traceback": traceback.format_exc()}
         raise HTTPException(
