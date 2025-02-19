@@ -7,7 +7,6 @@ from tqdm import tqdm
 from parser import NukeScriptParser
 from serialization import NukeGraphSerializer
 
-logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.INFO)
 log = logging.getLogger()
 
 
@@ -35,7 +34,7 @@ def prepare_data_for_training(training_config: dict):
                     if os.path.isfile(file_path):
                         os.unlink(file_path)
                 except Exception as e:
-                    print(f"Failed to delete {file_path}. Reason: {e}")
+                    log.info(f"Failed to delete {file_path}. Reason: {e}")
     else:
         os.makedirs(output_dir)
 
@@ -60,8 +59,8 @@ def prepare_data_for_training(training_config: dict):
                 script_name, _ = os.path.splitext(base_name)
                 serializer.serialize_graph(script_name, parsed_script)
         except Exception as e:
-            print(traceback.format_exc())
-            print(f"Error reading/parsing script {script_path}: {str(e)}")
+            log.info(traceback.format_exc())
+            log.info(f"Error reading/parsing script {script_path}: {str(e)}")
             continue
 
 

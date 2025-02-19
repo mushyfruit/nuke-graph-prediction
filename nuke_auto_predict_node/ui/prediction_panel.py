@@ -1,12 +1,9 @@
-import nuke
-import nukescripts
-
-import logging
+from functools import lru_cache
 
 from typing import List, Tuple, Dict
 
-log = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
+import nuke
+import nukescripts
 
 BUILT_IN_TABS = [
     "Properties.1",
@@ -16,14 +13,10 @@ BUILT_IN_TABS = [
     "Toolbar.1",
 ]
 
-_g_prediction_panel = None
 
-
+@lru_cache(maxsize=1)
 def get_panel_instance():
-    global _g_prediction_panel
-    if not _g_prediction_panel:
-        _g_prediction_panel = PredictionPanel()
-    return _g_prediction_panel
+    return PredictionPanel()
 
 
 def show_prediction_panel():
@@ -38,15 +31,17 @@ def show_prediction_panel():
     return panel.addToPane(pane=existing_pane)
 
 
-def create_prediction_widget_instance(request_handler=None):
+def create_prediction_widget_instance(request_handler=None, prediction_manager=None):
     from .prediction_widget import PredictionWidget
-    from ..request_handler import get_request_handler
+    from ..api.request_handler import get_request_handler
+    from ..api.recommendation import get_prediction_manager
 
     try:
+        manager = prediction_manager or get_prediction_manager()
         handler = request_handler or get_request_handler()
-        return PredictionWidget(handler)
+        return PredictionWidget(handler, manager)
     except Exception as e:
-        raise RuntimeError(f"Failed to craete prediction widget: {e}")
+        raise RuntimeError(f"Failed to create prediction widget: {e}")
 
 
 class PredictionPanel(nukescripts.panels.PythonPanel):

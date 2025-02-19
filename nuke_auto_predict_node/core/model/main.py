@@ -1,16 +1,19 @@
+import copy
+import time
+import logging
+from dataclasses import dataclass
+
 import torch
 from torch_geometric.loader import DataLoader
 import torch.optim as optim
 import torch.amp as amp
 
-import copy
-import time
-from dataclasses import dataclass
-
 from .constants import MODEL_NAME, DirectoryConfig, TrainingStatus, TrainingPhase
 from .utilities import save_model_checkpoint, load_model_checkpoint
 from .dataset import NukeGraphDataset
 from .gat import NukeGATPredictor
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -35,8 +38,8 @@ def main():
     dataset = NukeGraphDataset(force_rebuild=True)
     dataset.process_all_graphs_in_dir(DirectoryConfig.MODEL_DATA_FOLDER)
 
-    print(f"Dataset contains {len(dataset)} graphs")
-    print(f"Number of node types: {len(dataset.vocab)}")
+    log.info(f"Dataset contains {len(dataset)} graphs")
+    log.info(f"Number of node types: {len(dataset.vocab)}")
 
     model = NukeGATPredictor(
         num_features=4,
@@ -98,7 +101,7 @@ def train_model_gat(
     if memory_fraction is not None:
         torch.cuda.set_per_process_memory_fraction(memory_fraction)
 
-    print("Using {} device".format(device))
+    log.info("Using {} device".format(device))
 
     train_loader, val_loader = setup_dataloaders(dataset, config)
 
@@ -226,15 +229,15 @@ def train_model_gat(
         if val_accuracy > best_val_accuracy:
             best_val_accuracy = val_accuracy
             best_model_state = copy.deepcopy(model.state_dict())
-            print(f"  New best validation accuracy: {best_val_accuracy:.2f}%")
+            log.info(f"  New best validation accuracy: {best_val_accuracy:.2f}%")
 
         # Print progress with learning rate
-        print(f"Epoch {epoch + 1}/{config.epochs}:")
-        print(
+        log.info(f"Epoch {epoch + 1}/{config.epochs}:")
+        log.info(
             f"  Train Loss: {avg_train_loss:.4f}, Train Accuracy: {train_accuracy:.2f}%"
         )
-        print(f"  Val Loss: {avg_val_loss:.4f}, Val Accuracy: {val_accuracy:.2f}%")
-        print(f"  Learning Rate: {current_lr:.2e}")
+        log.info(f"  Val Loss: {avg_val_loss:.4f}, Val Accuracy: {val_accuracy:.2f}%")
+        log.info(f"  Learning Rate: {current_lr:.2e}")
 
         if status_queue:
             current_epoch = epoch + 1
@@ -252,8 +255,8 @@ def train_model_gat(
             )
 
     training_time = time.time() - start_time
-    print(f"\nTraining completed in {training_time:.2f} seconds")
-    print(f"Best validation accuracy: {best_val_accuracy:.2f}%")
+    log.info(f"\nTraining completed in {training_time:.2f} seconds")
+    log.info(f"Best validation accuracy: {best_val_accuracy:.2f}%")
 
     # Restore best model
     if best_model_state is not None:

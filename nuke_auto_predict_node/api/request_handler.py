@@ -4,18 +4,15 @@ import urllib.request
 from urllib.error import URLError, HTTPError
 
 from contextlib import contextmanager
+from functools import lru_cache
 from typing import Dict, Any, Optional
 
 log = logging.getLogger(__name__)
 
-_g_request_handler = None
 
-
+@lru_cache(maxsize=1)
 def get_request_handler():
-    global _g_request_handler
-    if _g_request_handler is None:
-        _g_request_handler = RequestHandler(f"http://127.0.0.1:8000/")
-    return _g_request_handler
+    return RequestHandler(f"http://127.0.0.1:8000/")
 
 
 class NukeRequestError(Exception):

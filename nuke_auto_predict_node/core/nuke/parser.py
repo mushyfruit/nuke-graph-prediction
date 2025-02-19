@@ -1,12 +1,14 @@
 import re
-from tqdm import tqdm
-
+import logging
 import traceback
+from tqdm import tqdm
 from dataclasses import dataclass
 from typing import Dict, List
 
 IGNORE_NODES = {"BackdropNode", "StickyNote"}
 GROUP_INPUT_NODE = {"LiveInput", "Input"}
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -84,8 +86,8 @@ class NukeScript:
         """Exit current group context"""
 
         if verbose:
-            print([x for x in self.group_stack[-1].nodes.keys()])
-            print(f"Exiting {self.group_stack[-1].name}")
+            log.info([x for x in self.group_stack[-1].nodes.keys()])
+            log.info(f"Exiting {self.group_stack[-1].name}")
 
         if len(self.group_stack) > 1:
             self.group_stack.pop()
@@ -120,7 +122,7 @@ class NukeScriptParser:
 
     def parse_script(self, contents, script_filter=None):
         if not contents:
-            print("No contents found!")
+            log.info("No contents found!")
             return
 
         parsed_scripts = {}
@@ -136,9 +138,8 @@ class NukeScriptParser:
                     parsed_scripts[script_name] = self.parse_single_script(
                         script_contents
                     )
-                except Exception as e:
-                    print(f"Error parsing script {script_name}: {str(e)}")
-                    traceback.print_exc()
+                except Exception:
+                    log.info(f"Error parsing script {script_name}: {traceback.format_exc()}")
                     return
 
         return parsed_scripts
@@ -214,14 +215,14 @@ class NukeScriptParser:
                     script.current_group.add_node(node)
 
                 except Exception:
-                    print("---------------------")
-                    print(content.split("\n")[i - 15 : i + 5])
-                    print(f"Line:  {i}")
-                    print(f"Current group: {script.current_group.name}")
-                    print(f"Current group stack: {script.current_group.stack}")
-                    print(f"Current node: {current_node}")
-                    print(current_params.keys())
-                    print(f"Current param?: {self.multiline_param}")
+                    log.error("---------------------")
+                    log.error(content.split("\n")[i - 15 : i + 5])
+                    log.error(f"Line:  {i}")
+                    log.error(f"Current group: {script.current_group.name}")
+                    log.error(f"Current group stack: {script.current_group.stack}")
+                    log.error(f"Current node: {current_node}")
+                    log.error(current_params.keys())
+                    log.error(f"Current param?: {self.multiline_param}")
                     raise
 
                 # Enter new group after creation!

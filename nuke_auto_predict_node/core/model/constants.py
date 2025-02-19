@@ -3,6 +3,19 @@ from enum import Enum
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
 
+VOCAB = "vocab.json"
+MODEL_NAME = "nuke_predictor_gat"
+
+
+class DirectoryConfig:
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+
+    MODEL_PATH = os.path.join(BASE_DIR, "checkpoints")
+    MODEL_DATA_FOLDER = os.path.join(BASE_DIR, "tmp", "nuke_graphs")
+    DATA_CACHE_PATH = os.path.join(MODEL_PATH, "data_cache")
+    VOCAB_PATH = os.path.join(DATA_CACHE_PATH, VOCAB)
+    TRAINING_LOG_FILE = os.path.join(MODEL_PATH, "logs", "training.log")
+
 
 class NukeScript:
     ROOT = "root"
@@ -55,18 +68,3 @@ class TrainingStatus:
             )
 
         return status_dict
-
-
-PLUGIN_ROOT = os.path.dirname(os.path.dirname(__file__))
-
-VOCAB = "vocab.json"
-MODEL_NAME = "nuke_predictor_gat"
-
-
-class DirectoryConfig:
-    BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-
-    MODEL_PATH = os.path.join(BASE_DIR, "checkpoints")
-    MODEL_DATA_FOLDER = os.path.join(BASE_DIR, "tmp", "nuke_graphs")
-    DATA_CACHE_PATH = os.path.join(MODEL_PATH, "data_cache")
-    VOCAB_PATH = os.path.join(DATA_CACHE_PATH, VOCAB)

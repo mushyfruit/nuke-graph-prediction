@@ -1,6 +1,7 @@
 import os
 import sys
-from fastapi import FastAPI, HTTPException, Request
+import logging
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, field_validator
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -10,12 +11,15 @@ import traceback
 from core.model.dataset import NukeGraphBuilder
 from core.model.manager import NukeNodePredictor
 
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Optional, Tuple
 
 app = FastAPI()
 
 predictor = NukeNodePredictor()
 converter = NukeGraphBuilder(predictor.vocab)
+
+log = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 
 class Node(BaseModel):
@@ -70,6 +74,7 @@ async def get_training_status():
 async def predict(request: PredictionRequest):
     """Prediction endpoint"""
     try:
+        log.info(f"Predicting node {request.start_node}")
         nodes = request.root.nodes
         start_node = nodes[request.start_node].model_dump()
         pyg_graph_data = converter.create_graph_data(request.model_dump(), start_node)
@@ -77,6 +82,7 @@ async def predict(request: PredictionRequest):
         return PredictionResponse(prediction=prediction)
     except Exception as e:
         error_details = {"error": str(e), "traceback": traceback.format_exc()}
+        log.error(error_details)
         raise HTTPException(
             status_code=500, detail=f"Prediction failed: {error_details}"
         )
@@ -87,15 +93,17 @@ async def train(request: TrainingRequest):
     """Prediction endpoint"""
     try:
         # Parse and serialize the scripts!
+        log.info("Received a training request!")
         result = predictor.start_training_pipeline(request.file_paths)
         return result.to_dict()
 
     except Exception as e:
         error_details = {"error": str(e), "traceback": traceback.format_exc()}
+        log.error(error_details)
         raise HTTPException(status_code=500, detail=f"Training failed: {error_details}")
 
 
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=8000, log_level="warning")

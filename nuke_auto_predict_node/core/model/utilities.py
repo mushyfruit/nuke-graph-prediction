@@ -1,10 +1,13 @@
 import os
 import json
+import logging
 from dotenv import load_dotenv
 from subprocess import Popen, PIPE
 from tqdm import tqdm
 
 from .constants import DirectoryConfig
+
+log = logging.getLogger(__name__)
 
 
 def json_back_to_nk():
@@ -20,7 +23,7 @@ def json_back_to_nk():
 
     json_files = glob.glob(json_pattern)
     if not json_files:
-        print(f"No JSON files found in {source_dir}")
+        log.info(f"No JSON files found in {source_dir}")
         return source_data
 
     for json_file in json_files:
@@ -32,7 +35,7 @@ def json_back_to_nk():
             new_path = os.path.join(source_dir, os.path.basename(file_path))
             with open(new_path, "w", encoding="utf-8") as f:
                 f.write(script_contents)
-            print(f"Restored: {new_path}")
+            log.info(f"Restored: {new_path}")
 
 
 def get_remote_info():
@@ -95,7 +98,7 @@ def save_model_checkpoint(model, model_name):
     }
 
     torch.save(checkpoint, model_path)
-    print(f"Model saved to {DirectoryConfig.MODEL_PATH}")
+    log.info(f"Model saved to {DirectoryConfig.MODEL_PATH}")
 
 
 def load_model_checkpoint(model_name: str, device="cuda"):
@@ -126,7 +129,7 @@ def load_model_checkpoint(model_name: str, device="cuda"):
 
     # Load model state
     model.load_state_dict(check_state_dict(checkpoint["state_dict"]))
-    print("Successfully loaded state dictionary.")
+    log.info("Successfully loaded state dictionary.")
 
     # Load scaler if it was saved
     scaler = None

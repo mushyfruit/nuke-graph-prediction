@@ -1,16 +1,25 @@
 import os
 import json
-import logging
+from functools import lru_cache
 from typing import Dict, Optional
 
 import nuke
 
 from .request_handler import get_request_handler
+from .utilities import get_all_parameters
+from ..logging_config import get_logger
 
-log = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
+log = get_logger(__name__)
 
-_g_prediction_manager = None
+
+@lru_cache(maxsize=1)
+def get_prediction_manager():
+    return PredictionManager()
+
+
+def perform_recommendation(node_name=None):
+    manager = get_prediction_manager()
+    manager.perform_recommendation(node_name=node_name)
 
 
 class PredictionManager:
@@ -28,13 +37,13 @@ class PredictionManager:
         self.load_model_vocab()
 
     def load_model_vocab(self):
-        from . import model_cnst
+        from .. import model_cnst
 
-        if not os.path.exists(model_cnst.VOCAB_PATH):
+        if not os.path.exists(model_cnst.DirectoryConfig.VOCAB_PATH):
             return
 
         try:
-            with open(model_cnst.VOCAB_PATH, "r") as f:
+            with open(model_cnst.DirectoryConfig.VOCAB_PATH, "r") as f:
                 self._vocabulary = json.load(f).get("node_type_to_idx", {})
         except (json.JSONDecodeError, IOError) as e:
             log.error(f"Failed to load vocabulary: {str(e)}")
@@ -65,7 +74,7 @@ class PredictionManager:
         if not prediction:
             return
 
-        from .ui import prediction_panel
+        from ..ui import prediction_panel
 
         panel = prediction_panel.get_panel_instance()
         if not panel:
@@ -165,44 +174,3 @@ class PredictionManager:
             return False
 
         return disable_knob.value()
-
-
-def get_all_parameters(node):
-    blacklist_knobs = {"xpos", "ypos"}
-
-    parameter_dict = {}
-    for knob in node.knobs():
-        if knob in blacklist_knobs:
-            continue
-
-        k = node[knob]
-        knob_value = k.value()
-
-        try:
-            if k.defaultValue() == knob_value:
-                continue
-        # Not all knobs define a 'defaultValue()'
-        except Exception as e:
-            pass
-
-        if not isinstance(knob_value, (str, float, int)):
-            continue
-
-        if knob_value == "":
-            continue
-
-        parameter_dict[knob] = node[knob].value()
-
-    return parameter_dict
-
-
-def get_prediction_manager():
-    global _g_prediction_manager
-    if _g_prediction_manager is None:
-        _g_prediction_manager = PredictionManager()
-    return _g_prediction_manager
-
-
-def perform_recommendation(node_name=None):
-    manager = get_prediction_manager()
-    manager.perform_recommendation(node_name=node_name)

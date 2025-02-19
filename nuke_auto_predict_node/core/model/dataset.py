@@ -14,7 +14,6 @@ from torch_geometric.data import Data, Dataset
 from typing import Dict, Optional
 
 log = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
 
 
 class Vocabulary:

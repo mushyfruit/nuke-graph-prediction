@@ -1,10 +1,13 @@
 import os
 import json
+import logging
 import traceback
 
 from tqdm import tqdm
 
 from .parser import NukeNode
+
+log = logging.getLogger(__name__)
 
 
 class NukeGraphSerializer:
@@ -50,15 +53,13 @@ class NukeGraphSerializer:
             script_name, _ = os.path.splitext(script_base_path)
 
             if len(nuke_script) <= 1:
-                print("Filtering stub script: {0}".format(script_name))
+                log.info("Filtering stub script: {0}".format(script_name))
                 continue
 
             try:
                 self.serialize_graph(script_name, nuke_script)
-            except Exception as e:
-                traceback.print_exc()
-                print("Processing failed for {0}".format(full))
-                print(e)
+            except Exception:
+                log.info(f"Processing failed for {full}: {traceback.format_exc()}")
                 return
 
     def serialize_graph(self, script_name, nuke_script):

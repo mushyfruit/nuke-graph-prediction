@@ -1,15 +1,9 @@
-import logging
-
 import nuke
 import nukescripts
 
 from .server.launcher import launch_inference_service
 from .ui import prediction_panel
-from .recommendation import perform_recommendation
-
-
-log = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
+from .api.recommendation import perform_recommendation
 
 _model_vocabulary = None
 

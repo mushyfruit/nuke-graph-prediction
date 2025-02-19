@@ -5,21 +5,26 @@ import nukescripts
 
 from PySide2 import QtWidgets, QtCore
 
-from ..request_handler import RequestHandler
+from ..api import RequestHandler, PredictionManager
 from ..core.model.constants import TrainingPhase
-
-import logging
+from ..logging_config import get_logger
 
 from typing import List, Tuple, Dict
 
-log = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
+log = get_logger(__name__)
 
 
 class PredictionWidget(QtWidgets.QWidget):
-    def __init__(self, request_handler: RequestHandler, parent=None):
+    def __init__(
+        self,
+        request_handler: RequestHandler,
+        prediction_manager: PredictionManager,
+        parent=None,
+    ):
         super().__init__(parent=parent)
         self._request_handler = request_handler
+        self._prediction_manager = prediction_manager
+
         self._stored_nuke_files = []
         self._predictions = None
         self._current_node_name = None
@@ -249,10 +254,7 @@ class PredictionWidget(QtWidgets.QWidget):
     def _on_refresh_button_clicked(self):
         if self._current_node_name is None:
             return
-
-        from ..recommendation import perform_recommendation
-
-        perform_recommendation(self._current_node_name)
+        self._prediction_manager.perform_recommendation(self._current_node_name)
 
     def _update_prediction_tree(self):
         """Update the prediction list widget with current predictions."""

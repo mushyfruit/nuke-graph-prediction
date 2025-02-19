@@ -1,7 +1,11 @@
 import os
-
-import threading
 import queue
+import logging
+import threading
+import traceback
+
+import torch
+from torch_geometric.data import Data
 
 from .main import train_model_gat
 from .dataset import Vocabulary, NukeGraphDataset
@@ -13,12 +17,10 @@ from .constants import (
     TrainingStatus,
 )
 from .utilities import check_state_dict, save_model_checkpoint
-
 from ..nuke.parser import NukeScriptParser
 from ..nuke.serialization import NukeGraphSerializer
 
-import torch
-from torch_geometric.data import Data
+log = logging.getLogger(__name__)
 
 
 class NukeNodePredictor:
@@ -77,11 +79,13 @@ class NukeNodePredictor:
                 phase=TrainingPhase.SERIALIZING, label="Pipeline already in progress"
             )
 
+        log.info("Starting the training pipeline!")
         while not self.status_queue.empty():
             self.status_queue.get_nowait()
 
         self.is_running.set()
 
+        log.info("Starting the training thread...")
         self.training_thread = threading.Thread(
             target=self._training_thread_target, args=(file_paths,)
         )
@@ -134,6 +138,7 @@ class NukeNodePredictor:
             )
 
         except Exception as e:
+            log.error(traceback.format_exc())
             raise
         finally:
             self.is_running.clear()

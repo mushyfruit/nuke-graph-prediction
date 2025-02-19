@@ -28,19 +28,15 @@ class InferenceLauncher:
         cmd = [str(self.python_path), DirectoryConfig.INFERENCE_SCRIPT_PATH, str(port)]
 
         log.info(f"Started the inference subprocess...")
-        self.process = subprocess.Popen(
-            cmd,
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            # Thread-safe alternative to preexec_fn=os.setsid
-            start_new_session=True,
-        )
-
-        for line in self.process.stdout:
-            log.info(f"Subprocess stdout: {line.strip()}")
-        for line in self.process.stderr:
-            log.info(f"Subprocess stderr: {line.strip()}")
+        with open(DirectoryConfig.SERVER_LOG_FILE, "w") as log_file:
+            self.process = subprocess.Popen(
+                cmd,
+                env=env,
+                stdout=log_file,
+                stderr=log_file,
+                # Thread-safe alternative to preexec_fn=os.setsid
+                start_new_session=True,
+            )
 
         return True
 

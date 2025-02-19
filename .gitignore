@@ -9,7 +9,7 @@ json_files/
 
 # model checkpoints
 nuke_auto_predict_node/checkpoints/*
-!nuke_auto_predict_node/checkpoints/.gitkeep
+!nuke_auto_predict_node/checkpoints/logs/.gitkeep
 
 # venv
 venv/
