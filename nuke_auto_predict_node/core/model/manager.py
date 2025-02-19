@@ -3,21 +3,19 @@ import os
 import threading
 import queue
 
-from .nuke_script.parser import NukeScriptParser
-from .nuke_script.serialization import NukeGraphSerializer
-
 from .main import train_model_gat
 from .dataset import Vocabulary, NukeGraphDataset
-from .model import NukeGATPredictor
+from .gat import NukeGATPredictor
 from .constants import (
     MODEL_NAME,
-    MODEL_PATH,
-    VOCAB_PATH,
-    MODEL_DATA_FOLDER,
+    DirectoryConfig,
     TrainingPhase,
     TrainingStatus,
 )
 from .utilities import check_state_dict, save_model_checkpoint
+
+from ..nuke.parser import NukeScriptParser
+from ..nuke.serialization import NukeGraphSerializer
 
 import torch
 from torch_geometric.data import Data
@@ -40,20 +38,22 @@ class NukeNodePredictor:
 
     def load(self):
         # Retrieve the checkpoint's path.
-        model_checkpoint_path = os.path.join(MODEL_PATH, f"{self.model_name}_model.pt")
+        model_checkpoint_path = os.path.join(
+            DirectoryConfig.MODEL_PATH, f"{self.model_name}_model.pt"
+        )
         if not os.path.exists(model_checkpoint_path):
             raise FileNotFoundError(
                 f"Model {self.model_name} not found at {model_checkpoint_path}"
             )
 
-        if not os.path.exists(VOCAB_PATH):
-            raise FileNotFoundError(f"Vocab {VOCAB_PATH} not found")
+        if not os.path.exists(DirectoryConfig.VOCAB_PATH):
+            raise FileNotFoundError(f"Vocab {DirectoryConfig.VOCAB_PATH} not found")
 
         # Load the model checkpoint.
         checkpoint = torch.load(model_checkpoint_path, map_location=self.device)
 
         # Populate the model's stored vocabulary.
-        self.vocab = Vocabulary(VOCAB_PATH)
+        self.vocab = Vocabulary(DirectoryConfig.VOCAB_PATH)
 
         # Instantiate the GAT model.
         self.model = NukeGATPredictor(
@@ -174,7 +174,7 @@ class NukeNodePredictor:
 
     def parse_and_serialize_scripts(self, script_paths, output_dir=None):
         if output_dir is None:
-            output_dir = MODEL_DATA_FOLDER
+            output_dir = DirectoryConfig.MODEL_DATA_FOLDER
 
         os.makedirs(output_dir, exist_ok=True)
 

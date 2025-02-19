@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 from subprocess import Popen, PIPE
 from tqdm import tqdm
 
-from .constants import VOCAB_PATH, MODEL_PATH
+from .constants import DirectoryConfig
 
 
 def json_back_to_nk():
@@ -82,9 +82,9 @@ def download_file(filename, local_path):
 def save_model_checkpoint(model, model_name):
     import torch
 
-    os.makedirs(MODEL_PATH, exist_ok=True)
+    os.makedirs(DirectoryConfig.MODEL_PATH, exist_ok=True)
 
-    model_path = os.path.join(MODEL_PATH, f"{model_name}_model.pt")
+    model_path = os.path.join(DirectoryConfig.MODEL_PATH, f"{model_name}_model.pt")
     checkpoint = {
         "num_features": model.num_features,
         "state_dict": model.state_dict(),
@@ -95,23 +95,25 @@ def save_model_checkpoint(model, model_name):
     }
 
     torch.save(checkpoint, model_path)
-    print(f"Model saved to {MODEL_PATH}")
+    print(f"Model saved to {DirectoryConfig.MODEL_PATH}")
 
 
 def load_model_checkpoint(model_name: str, device="cuda"):
     import torch
 
-    model_checkpoint_path = os.path.join(MODEL_PATH, f"{model_name}_model.pt")
+    model_checkpoint_path = os.path.join(
+        DirectoryConfig.MODEL_PATH, f"{model_name}_model.pt"
+    )
 
     # Load checkpoint
     checkpoint = torch.load(model_checkpoint_path, map_location=device)
 
     # Load vocabulary
-    with open(VOCAB_PATH, "r") as f:
+    with open(DirectoryConfig.VOCAB_PATH, "r") as f:
         vocab = json.load(f)
 
     # Initialize model
-    from model import NukeGATPredictor
+    from gat import NukeGATPredictor
 
     model = NukeGATPredictor(
         num_features=4,

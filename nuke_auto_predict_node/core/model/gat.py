@@ -1,6 +1,6 @@
 import torch
 import torch.nn.functional as F
-from torch_geometric.nn import GATConv, GATv2Conv
+from torch_geometric.nn import GATv2Conv
 from torch.nn import LayerNorm, Linear
 from torch_geometric.nn import global_mean_pool
 

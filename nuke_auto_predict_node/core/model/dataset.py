@@ -6,7 +6,7 @@ import numpy as np
 from tqdm import tqdm
 from collections import deque
 
-from .constants import NukeScript, DATA_CACHE_PATH, VOCAB
+from .constants import NukeScript, DirectoryConfig, VOCAB
 
 import torch
 from torch_geometric.data import Data, Dataset
@@ -163,11 +163,15 @@ class NukeGraphDataset(Dataset):
         self.processed_files = []
         self.examples = []
 
-        self.processed_graphs_file = os.path.join(DATA_CACHE_PATH, "process_graphs.pt")
-        self.metadata_file = os.path.join(DATA_CACHE_PATH, "graph_metadata.json")
+        self.processed_graphs_file = os.path.join(
+            DirectoryConfig.DATA_CACHE_PATH, "process_graphs.pt"
+        )
+        self.metadata_file = os.path.join(
+            DirectoryConfig.DATA_CACHE_PATH, "graph_metadata.json"
+        )
 
         # Load the Nuke node type vocabulary.
-        self.vocabulary_path = os.path.join(DATA_CACHE_PATH, VOCAB)
+        self.vocabulary_path = os.path.join(DirectoryConfig.DATA_CACHE_PATH, VOCAB)
         self.vocab = Vocabulary(self.vocabulary_path)
 
         self.graph_builder = NukeGraphBuilder(self.vocab)
@@ -209,7 +213,7 @@ class NukeGraphDataset(Dataset):
 
     def save_graph_state(self):
         # Ensure the metadata parent dir exists.
-        os.makedirs(DATA_CACHE_PATH, exist_ok=True)
+        os.makedirs(DirectoryConfig.DATA_CACHE_PATH, exist_ok=True)
 
         torch.save(
             {

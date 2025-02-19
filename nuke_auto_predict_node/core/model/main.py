@@ -7,10 +7,10 @@ import copy
 import time
 from dataclasses import dataclass
 
-from .constants import MODEL_NAME, MODEL_DATA_FOLDER, TrainingStatus, TrainingPhase
+from .constants import MODEL_NAME, DirectoryConfig, TrainingStatus, TrainingPhase
 from .utilities import save_model_checkpoint, load_model_checkpoint
 from .dataset import NukeGraphDataset
-from .model import NukeGATPredictor
+from .gat import NukeGATPredictor
 
 
 @dataclass
@@ -33,7 +33,7 @@ def main():
     config = TrainingConfig()
 
     dataset = NukeGraphDataset(force_rebuild=True)
-    dataset.process_all_graphs_in_dir(MODEL_DATA_FOLDER)
+    dataset.process_all_graphs_in_dir(DirectoryConfig.MODEL_DATA_FOLDER)
 
     print(f"Dataset contains {len(dataset)} graphs")
     print(f"Number of node types: {len(dataset.vocab)}")

@@ -1,11 +1,14 @@
 import os
+import sys
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, field_validator
 
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 import traceback
 
-from model.dataset import NukeGraphBuilder
-from model.manager import NukeNodePredictor
+from core.model.dataset import NukeGraphBuilder
+from core.model.manager import NukeNodePredictor
 
 from typing import List, Dict, Any, Optional, Tuple
 

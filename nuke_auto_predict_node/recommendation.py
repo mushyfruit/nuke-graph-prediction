@@ -1,92 +1,170 @@
 import os
 import json
 import logging
+from typing import Dict, Optional
 
 import nuke
 
 from .request_handler import get_request_handler
 
-
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-_model_vocabulary = None
+_g_prediction_manager = None
 
 
-def load_model_vocab():
-    global _model_vocabulary
-    from . import model_cnst
+class PredictionManager:
+    """Manages graph traversal and serialization for the recommendation system.
 
-    vocab_path = os.path.join(model_cnst.DATA_CACHE_PATH, model_cnst.VOCAB)
-    if not os.path.exists(vocab_path):
-        log.error("No vocab file found at {}".format(vocab_path))
-        return
+    Serialized graph data is posted via the :class:`RequestHandler` to the
+    inference service running in a separate process.
+    """
 
-    with open(vocab_path, "r") as f:
-        _model_vocabulary = json.load(f).get("node_type_to_idx", {})
+    def __init__(self):
+        self._vocabulary: Dict[str, int] = {}
+        self._request_handler = get_request_handler()
+        self._min_node_requirement = 3
 
+        self.load_model_vocab()
 
-def is_node_disabled(node):
-    disable_knob = node.knob("disable")
-    if not disable_knob:
-        return False
+    def load_model_vocab(self):
+        from . import model_cnst
 
-    return disable_knob.value()
+        if not os.path.exists(model_cnst.VOCAB_PATH):
+            return
 
+        try:
+            with open(model_cnst.VOCAB_PATH, "r") as f:
+                self._vocabulary = json.load(f).get("node_type_to_idx", {})
+        except (json.JSONDecodeError, IOError) as e:
+            log.error(f"Failed to load vocabulary: {str(e)}")
 
-def traverse_upstream(node, target_nodes=None, visited=None, length=0, max_length=15):
-    if target_nodes is None:
-        target_nodes = {}
+    def perform_recommendation(self, node_name=None):
+        """Retrieves the next-node predictions for the given or selected node.
 
-    if visited is None:
-        visited = set()
+        :param node_name: Optional node name to perform predictions for.
+        """
+        try:
+            serialized_graph_data = self._serialize_upstream(node_name=node_name)
+            if not serialized_graph_data:
+                return
 
-    if length >= max_length:
-        return target_nodes, visited
+            root_nodes = serialized_graph_data["root"]["nodes"]
+            if len(root_nodes) <= self._min_node_requirement:
+                log.info("Not enough nodes for meaningful prediction!")
+                return
 
-    node_full_name = node.fullName()
-    if node_full_name in visited:
-        return target_nodes, visited
+            log.info("Making prediction POST request...")
+            self._process_prediction(serialized_graph_data)
 
-    if not is_node_disabled(node):
-        # Ensure our model has seen the node.
-        if _model_vocabulary is None:
-            load_model_vocab()
+        except Exception as e:
+            log.error(f"Error during recommendation: {str(e)}")
 
-        if node.Class() in _model_vocabulary:
-            target_nodes[node_full_name] = serialize_node(node)
+    def _process_prediction(self, graph_data: Dict) -> None:
+        prediction = self._request_handler.post("predict", graph_data)
+        if not prediction:
+            return
 
-    dependency_flag = nuke.INPUTS | nuke.HIDDEN_INPUTS
-    ancestors = node.dependencies(dependency_flag)
+        from .ui import prediction_panel
 
-    for ancestor in ancestors:
-        if ancestor.Class() in {"Group", "Gizmo"} or "gizmo_file" in ancestor.knobs():
-            traverse_upstream(
+        panel = prediction_panel.get_panel_instance()
+        if not panel:
+            log.info(f"Prediction: {prediction}")
+            return
+
+        selected_node = nuke.selectedNode()
+        panel.update_prediction_state(selected_node.fullName(), prediction)
+
+    def _serialize_upstream(self, node_name: Optional[str] = None) -> Optional[Dict]:
+        selected = self._get_target_node(node_name=node_name)
+        if not selected:
+            return None
+
+        if not self._vocabulary:
+            log.error("No model vocabulary found! Please train a local model first.")
+            return None
+
+        serialized_nodes = self.traverse_upstream(selected)
+        return {
+            "script_name": os.path.basename(nuke.scriptName()),
+            "root": {"name": "root", "parent": None, "nodes": serialized_nodes},
+            "start_node": selected.name(),
+        }
+
+    def traverse_upstream(
+        self, node, target_nodes=None, visited=None, length=0, max_length=15
+    ):
+        """Traverse upstream nodes to construct a serialized graph for node prediction."""
+
+        target_nodes = target_nodes or {}
+        visited = visited or set()
+
+        if length >= max_length:
+            return target_nodes
+
+        node_full_name = node.fullName()
+        if node_full_name in visited:
+            return target_nodes
+
+        visited.add(node_full_name)
+        target_nodes[node_full_name] = self._serialize_node(node)
+
+        dependency_flag = nuke.INPUTS | nuke.HIDDEN_INPUTS
+        for ancestor in node.dependencies(dependency_flag):
+            if self._is_group_or_gizmo(node):
+                self.traverse_upstream(
+                    ancestor,
+                    target_nodes=target_nodes,
+                    visited=visited,
+                    length=length + 1,
+                )
+
+            self.traverse_upstream(
                 ancestor, target_nodes=target_nodes, visited=visited, length=length + 1
             )
 
-        traverse_upstream(
-            ancestor, target_nodes=target_nodes, visited=visited, length=length + 1
-        )
+        return target_nodes
 
-    return target_nodes
+    @staticmethod
+    def _is_group_or_gizmo(node: nuke.Node):
+        return node.Class() in {"Group", "Gizmo"} or "gizmo_file" in node.knobs()
 
+    @staticmethod
+    def _get_target_node(node_name: Optional[str]) -> Optional[nuke.Node]:
+        if node_name:
+            return nuke.toNode(node_name)
 
-def serialize_node(node, include_parameters=False):
-    dependency_flag = nuke.INPUTS | nuke.HIDDEN_INPUTS
-    ancestors = node.dependencies(dependency_flag)
+        selected = nuke.selectedNode()
+        if not selected:
+            nuke.message("Please select a node!")
+            return
 
-    json_node = {
-        "name": node.name(),
-        "node_type": node.Class(),
-        "inputs": node.inputs(),
-        "input_connections": [ancestor.name() for ancestor in ancestors],
-    }
+        return selected
 
-    if include_parameters:
-        json_node["parameters"] = get_all_parameters(node)
+    @staticmethod
+    def _serialize_node(node: nuke.Node, include_parameters: bool = False) -> Dict:
+        dependency_flag = nuke.INPUTS | nuke.HIDDEN_INPUTS
+        ancestors = node.dependencies(dependency_flag)
 
-    return json_node
+        json_node = {
+            "name": node.name(),
+            "node_type": node.Class(),
+            "inputs": node.inputs(),
+            "input_connections": [a.name() for a in ancestors],
+        }
+
+        if include_parameters:
+            json_node["parameters"] = get_all_parameters(node)
+
+        return json_node
+
+    @staticmethod
+    def _is_node_disabled(node):
+        disable_knob = node.knob("disable")
+        if not disable_knob:
+            return False
+
+        return disable_knob.value()
 
 
 def get_all_parameters(node):
@@ -118,45 +196,13 @@ def get_all_parameters(node):
     return parameter_dict
 
 
-def serialize_upstream(node_name=None):
-    if node_name is None:
-        selected_node = nuke.selectedNode()
-        if not selected_node:
-            nuke.message("Please select a node!")
-            return
-    else:
-        selected_node = nuke.toNode(node_name)
-
-    serialized_nodes = traverse_upstream(selected_node)
-    return {
-        "script_name": os.path.basename(nuke.scriptName()),
-        "root": {"name": "root", "parent": None, "nodes": serialized_nodes},
-        "start_node": selected_node.name(),
-    }
+def get_prediction_manager():
+    global _g_prediction_manager
+    if _g_prediction_manager is None:
+        _g_prediction_manager = PredictionManager()
+    return _g_prediction_manager
 
 
 def perform_recommendation(node_name=None):
-    try:
-        serialized_graph_data = serialize_upstream(node_name=node_name)
-    except (ValueError, RuntimeError):
-        return
-
-    if len(serialized_graph_data["root"]["nodes"]) <= 3:
-        return
-
-    handler = get_request_handler()
-
-    log.info("Making prediction POST request...")
-    prediction = handler.post("predict", serialized_graph_data)
-    log.info(f"Prediction: {prediction}")
-
-    if prediction:
-        from .ui import prediction_panel
-
-        panel_instance = prediction_panel.get_panel_instance()
-
-        if not panel_instance:
-            return
-
-        selected_node = nuke.selectedNode()
-        panel_instance.update_prediction_state(selected_node.fullName(), prediction)
+    manager = get_prediction_manager()
+    manager.perform_recommendation(node_name=node_name)

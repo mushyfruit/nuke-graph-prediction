@@ -3,9 +3,9 @@ import logging
 import nuke
 import nukescripts
 
-from .launcher import launch_inference_service
+from .server.launcher import launch_inference_service
 from .ui import prediction_panel
-from .recommendation import perform_recommendation, load_model_vocab
+from .recommendation import perform_recommendation
 
 
 log = logging.getLogger(__name__)
@@ -17,8 +17,6 @@ _model_vocabulary = None
 def on_startup():
     """Initialize ML service on Nuke startup"""
     try:
-        load_model_vocab()
-
         launch_inference_service()
 
         register_prediction_panel()

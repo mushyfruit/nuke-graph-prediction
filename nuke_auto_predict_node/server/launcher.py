@@ -4,18 +4,18 @@ import signal
 import subprocess
 import logging
 
-from .constants import VENV_DIR_PATH, VENV_SETUP_SCRIPT, INFERENCE_SCRIPT_PATH
+from .constants import DirectoryConfig
 
 log = logging.getLogger(__name__)
 
 
 def create_launcher_venv():
-    subprocess.run(VENV_SETUP_SCRIPT, cwd=os.path.dirname(__file__))
+    subprocess.run(DirectoryConfig.VENV_SETUP_SCRIPT, cwd=os.path.dirname(__file__))
 
 
 class InferenceLauncher:
     def __init__(self, venv_path=None):
-        self.venv_path = venv_path if venv_path else VENV_DIR_PATH
+        self.venv_path = venv_path if venv_path else DirectoryConfig.VENV_DIR
         self.python_path = os.path.join(self.venv_path, "bin", "python3")
         self.process = None
 
@@ -25,7 +25,7 @@ class InferenceLauncher:
     def start_service(self, port=8000):
         env = self.get_subprocess_env()
 
-        cmd = [str(self.python_path), INFERENCE_SCRIPT_PATH, str(port)]
+        cmd = [str(self.python_path), DirectoryConfig.INFERENCE_SCRIPT_PATH, str(port)]
 
         log.info(f"Started the inference subprocess...")
         self.process = subprocess.Popen(
@@ -37,10 +37,10 @@ class InferenceLauncher:
             start_new_session=True,
         )
 
-        # for line in self.process.stdout:
-        #     log.info(f"Subprocess stdout: {line.strip()}")
-        # for line in self.process.stderr:
-        #     log.info(f"Subprocess stderr: {line.strip()}")
+        for line in self.process.stdout:
+            log.info(f"Subprocess stdout: {line.strip()}")
+        for line in self.process.stderr:
+            log.info(f"Subprocess stderr: {line.strip()}")
 
         return True
 
@@ -89,7 +89,7 @@ class InferenceLauncher:
 
 def launch_inference_service():
     # Ensure the inference service's virtual env exists.
-    if not os.path.exists(VENV_DIR_PATH):
+    if not os.path.exists(DirectoryConfig.VENV_DIR):
         create_launcher_venv()
         return
 
