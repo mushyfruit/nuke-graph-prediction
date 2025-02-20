@@ -6,7 +6,8 @@ import nukescripts
 from PySide2 import QtWidgets, QtCore
 
 from ..api import RequestHandler, PredictionManager
-from ..core.model.constants import TrainingPhase, DirectoryConfig, MODEL_NAME
+from ..core.model.constants import TrainingPhase
+from ..core.model.utilities import check_for_model_on_disk
 from ..logging_config import get_logger
 
 from typing import List, Tuple, Dict
@@ -25,6 +26,7 @@ class PredictionWidget(QtWidgets.QWidget):
         self._request_handler = request_handler
         self._prediction_manager = prediction_manager
 
+        self._model_exists = False
         self._stored_nuke_files = []
         self._predictions = None
         self._current_node_name = None
@@ -34,6 +36,16 @@ class PredictionWidget(QtWidgets.QWidget):
         self.status_timer.setInterval(1000)
 
         self.setup_ui()
+        self._check_for_model_on_disk()
+
+    def _check_for_model_on_disk(self):
+        model_exists = check_for_model_on_disk()
+
+        # Disable fine-tuning if no existing model is found.
+        self.fine_tune_checkbox.setEnabled(model_exists)
+        self.fine_tune_label.setEnabled(model_exists)
+
+        return model_exists
 
     def setup_ui(self):
         main_layout = QtWidgets.QVBoxLayout(self)
@@ -49,15 +61,15 @@ class PredictionWidget(QtWidgets.QWidget):
         self.tab_widget.addTab(self.training_page, "Training")
 
     def _on_folder_selected(self, folder_path):
-        self._clear_status_label()
+        self._clear_training_status_label()
         if not os.path.exists(folder_path):
-            self._update_status_label("Invalid path selected!")
+            self._update_training_status_label("Invalid path selected!")
             return
 
         glob_pattern = os.path.join(folder_path, "*.nk")
         nuke_files = glob.glob(glob_pattern)
         if not nuke_files:
-            self._update_status_label("No valid .nk files located!")
+            self._update_training_status_label("No valid .nk files located!")
             return
 
         self._update_list_widget(nuke_files)
@@ -69,15 +81,15 @@ class PredictionWidget(QtWidgets.QWidget):
             self.file_list_widget.addItem(filename)
         self._stored_nuke_files = nuke_files
 
-    def _update_status_label(self, status):
-        self.status_label.setText(status)
-        self.status_label.setHidden(False)
+    def _update_training_status_label(self, status):
+        self.training_status_label.setText(status)
+        self.training_status_label.setHidden(False)
 
-    def _clear_status_label(self):
-        self.status_label.setText("")
-        self.status_label.setHidden(True)
+    def _clear_training_status_label(self):
+        self.training_status_label.setText("")
+        self.training_status_label.setHidden(True)
 
-    def _update_progress(self, float_value):
+    def _update_training_progress(self, float_value):
         value = int(float_value * 100)
         self.training_progress_bar.setValue(value)
 
@@ -89,9 +101,9 @@ class PredictionWidget(QtWidgets.QWidget):
         self.file_input.folder_selected.connect(self._on_folder_selected)
         training_layout.addWidget(self.file_input)
 
-        self.status_label = QtWidgets.QLabel("")
-        training_layout.addWidget(self.status_label)
-        self.status_label.setHidden(True)
+        self.training_status_label = QtWidgets.QLabel("")
+        training_layout.addWidget(self.training_status_label)
+        self.training_status_label.setHidden(True)
 
         self.file_list_widget = QtWidgets.QListWidget(self)
         self.file_list_widget.setMinimumHeight(200)
@@ -108,24 +120,28 @@ class PredictionWidget(QtWidgets.QWidget):
         stat_layout.addWidget(self.epoch_label)
 
         self.epoch_value = QtWidgets.QLineEdit(self)
+        self.epoch_value.setReadOnly(True)
         stat_layout.addWidget(self.epoch_value)
 
         self.loss_label = QtWidgets.QLabel("Loss:")
         stat_layout.addWidget(self.loss_label)
 
         self.loss_value = QtWidgets.QLineEdit(self)
+        self.loss_value.setReadOnly(True)
         stat_layout.addWidget(self.loss_value)
 
         self.training_accuracy_label = QtWidgets.QLabel("Training")
         stat_layout.addWidget(self.training_accuracy_label)
 
         self.training_accuracy_value = QtWidgets.QLineEdit(self)
+        self.training_accuracy_value.setReadOnly(True)
         stat_layout.addWidget(self.training_accuracy_value)
 
         self.validation_accuracy_label = QtWidgets.QLabel("Validation:")
         stat_layout.addWidget(self.validation_accuracy_label)
 
         self.validation_accuracy_value = QtWidgets.QLineEdit(self)
+        self.validation_accuracy_value.setReadOnly(True)
         stat_layout.addWidget(self.validation_accuracy_value)
         training_layout.addLayout(stat_layout)
 
@@ -140,15 +156,7 @@ class PredictionWidget(QtWidgets.QWidget):
 
         self.fine_tune_label = QtWidgets.QLabel("Enable Fine Tuning:")
         self.fine_tune_checkbox = QtWidgets.QCheckBox(self)
-        self.fine_tune_checkbox.setChecked(True)
-
-        model_checkpoint_path = os.path.join(
-            DirectoryConfig.MODEL_PATH, f"{MODEL_NAME}_model.pt"
-        )
-        if not os.path.exists(model_checkpoint_path):
-            self.fine_tune_checkbox.setChecked(False)
-            self.fine_tune_checkbox.setEnabled(False)
-            self.fine_tune_label.setEnabled(False)
+        self.fine_tune_checkbox.setChecked(self._model_exists)
 
         bottom_layout.addWidget(self.memory_allocation_label)
         bottom_layout.addWidget(self.memory_allocation_value)
@@ -166,7 +174,7 @@ class PredictionWidget(QtWidgets.QWidget):
 
     def _on_training_btn_clicked(self):
         if not self._stored_nuke_files:
-            self._update_status_label(
+            self._update_training_status_label(
                 "Unable to start training. Please select a valid directory."
             )
             return
@@ -177,12 +185,29 @@ class PredictionWidget(QtWidgets.QWidget):
             self._stored_nuke_files, memory_allocation, enable_fine_tuning
         )
         if response["status"] == TrainingPhase.SERIALIZING.value:
-            self._update_status_label(response.get("label", ""))
+            self._update_training_status_label(response.get("label", ""))
             self.status_timer.start()
             self.training_btn.setEnabled(False)
+            self.file_input.setEnabled(False)
         else:
-            self._update_status_label("Error encountered! Please check logs.")
+            self._update_training_status_label("Error encountered! Please check logs.")
             log.error(f"Failed to begin model training! {response}")
+
+    def _on_model_finish(self):
+        self.status_timer.stop()
+        self.training_btn.setEnabled(True)
+        self.file_input.setEnabled(True)
+
+        # Check if the model now exists on disk.
+        if self._check_for_model_on_disk():
+            # Enable fine-tuning checkbox.
+            self.fine_tune_checkbox.setChecked(True)
+
+            # Update the prediction manager's state.
+            self._prediction_manager.refresh_manager()
+
+            # Clear any previous prediction page status.
+            self.update_prediction_page_status("")
 
     def _check_training_status(self):
         try:
@@ -193,17 +218,13 @@ class PredictionWidget(QtWidgets.QWidget):
             status = response["status"]
 
             if status == TrainingPhase.COMPLETE.value:
-                self.status_timer.stop()
-                self.training_btn.setEnabled(True)
-                self.fine_tune_checkbox.setChecked(True)
-                self.fine_tune_checkbox.setEnabled(True)
-                self.fine_tune_label.setEnabled(True)
+                self._on_model_finish()
 
             if response.get("label"):
-                self._update_status_label(response["label"])
+                self._update_training_status_label(response["label"])
 
             if response.get("progress"):
-                self._update_progress(response["progress"])
+                self._update_training_progress(response["progress"])
 
             if response.get("current_epoch"):
                 self.epoch_value.setText(str(response["current_epoch"]))
@@ -223,7 +244,7 @@ class PredictionWidget(QtWidgets.QWidget):
 
         except Exception as e:
             log.error(f"Error checking training status: {e}")
-            self._update_status_label(f"Error checking status: {str(e)}")
+            self._update_training_status_label(f"Error checking status: {str(e)}")
             self.status_timer.stop()
             self.training_btn.setEnabled(True)
 
@@ -234,6 +255,7 @@ class PredictionWidget(QtWidgets.QWidget):
         header_layout = QtWidgets.QHBoxLayout()
         self.selected_node_label = QtWidgets.QLabel("Selected Node: None")
         header_layout.addWidget(self.selected_node_label)
+        header_layout.addStretch(1)
 
         self.prediction_tree = QtWidgets.QTreeWidget()
         self.prediction_tree.itemDoubleClicked.connect(
@@ -262,13 +284,16 @@ class PredictionWidget(QtWidgets.QWidget):
         self.refresh_button.clicked.connect(self._on_refresh_button_clicked)
         button_layout.addWidget(self.refresh_button)
 
-        self.status_label = QtWidgets.QLabel("")
-        self.status_label.setWordWrap(True)
+        bottom_status_layout = QtWidgets.QHBoxLayout()
+        bottom_status_layout.addStretch(1)
+        self.bottom_status_label = QtWidgets.QLabel("")
+        bottom_status_layout.addWidget(self.bottom_status_label)
+        bottom_status_layout.addStretch(1)
 
         prediction_layout.addLayout(header_layout)
         prediction_layout.addWidget(self.prediction_tree)
         prediction_layout.addLayout(button_layout)
-        prediction_layout.addWidget(self.status_label)
+        prediction_layout.addLayout(bottom_status_layout)
 
     def _on_prediction_double_clicked(self, item, column):
         node_type = item.data(0, QtCore.Qt.UserRole)
@@ -282,8 +307,14 @@ class PredictionWidget(QtWidgets.QWidget):
             log.error(f"Failed to create prediction node: {e}")
 
     def _on_refresh_button_clicked(self):
+        # Check if a model checkpoint exists.
+        if not self._model_exists:
+            self._check_for_model_on_disk()
+            self._prediction_manager.refresh_manager()
+
         if self._current_node_name is None:
             return
+
         self._prediction_manager.perform_recommendation(self._current_node_name)
 
     def _update_prediction_tree(self):
@@ -294,6 +325,9 @@ class PredictionWidget(QtWidgets.QWidget):
             item.setData(0, QtCore.Qt.UserRole, node_type)
             item.setTextAlignment(1, QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
             self.prediction_tree.addTopLevelItem(item)
+
+    def update_prediction_page_status(self, label):
+        self.bottom_status_label.setText(label)
 
     def update_selected_node(self, selected_node):
         self._current_node_name = selected_node
@@ -329,7 +363,7 @@ class PredictionWidget(QtWidgets.QWidget):
 
         # Update the prediction tree UI.
         self._update_prediction_tree()
-        self.status_label.setText("Predictions updated successfully")
+        self.training_status_label.setText("Predictions updated successfully")
 
     def makeUI(self):
         return self

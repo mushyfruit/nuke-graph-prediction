@@ -1,13 +1,17 @@
 import os
 import json
 import logging
-from dotenv import load_dotenv
-from subprocess import Popen, PIPE
-from tqdm import tqdm
 
-from .constants import DirectoryConfig
+from .constants import DirectoryConfig, MODEL_NAME
 
 log = logging.getLogger(__name__)
+
+
+def check_for_model_on_disk():
+    model_checkpoint_path = os.path.join(
+        DirectoryConfig.MODEL_PATH, f"{MODEL_NAME}_model.pt"
+    )
+    return os.path.exists(model_checkpoint_path)
 
 
 def json_back_to_nk():
@@ -36,50 +40,6 @@ def json_back_to_nk():
             with open(new_path, "w", encoding="utf-8") as f:
                 f.write(script_contents)
             log.info(f"Restored: {new_path}")
-
-
-def get_remote_info():
-    load_dotenv()
-
-    remote_server = os.getenv("REMOTE_SERVER")
-    if remote_server is None:
-        raise RuntimeError("No REMOTE_SERVER environment variable set!")
-
-    remote_dir = os.getenv("REMOTE_DIR")
-    if remote_dir is None:
-        raise RuntimeError("No REMOTE_DIR environment variable set!")
-
-    return remote_server, remote_dir
-
-
-def list_remote_files(ext=".json"):
-    remote_server, remote_dir = get_remote_info()
-
-    ssh_command = ["ssh", remote_server, f"ls {remote_dir}"]
-    proc = Popen(ssh_command, stdout=PIPE, universal_newlines=True)
-    stdout = proc.stdout.read()
-    return [f for f in stdout.strip().split("\n") if f.endswith(ext)]
-
-
-def download_remote_files(output_dir):
-    # Ensure the nuke_graphs directory exists.
-    os.makedirs(output_dir, exist_ok=True)
-    remote_files = list_remote_files()
-
-    # Download each file if it doesn't exist locally
-    with tqdm(remote_files, desc="Downloading files") as pbar:
-        for filename in pbar:
-            local_path = os.path.join(output_dir, filename)
-            if not os.path.exists(local_path):
-                pbar.set_description(f"Downloading {filename}")
-                download_file(filename, local_path)
-
-
-def download_file(filename, local_path):
-    remote_server, remote_dir = get_remote_info()
-    scp_command = ["scp", f"{remote_server}:{remote_dir}/{filename}", local_path]
-    proc = Popen(scp_command)
-    proc.wait()
 
 
 def save_model_checkpoint(model, model_name):

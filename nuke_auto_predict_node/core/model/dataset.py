@@ -43,9 +43,9 @@ class Vocabulary:
         """Loads the vocabulary from a JSON file."""
         if not os.path.exists(file_path):
             log.warning(
-                f"Vocabulary file {file_path} not found. Starting with empty vocabulary."
+                f"Vocabulary file {file_path} not found."
             )
-            return
+
         try:
             with open(file_path, "r") as f:
                 data = json.load(f)
@@ -71,8 +71,20 @@ class Vocabulary:
 
 
 class NukeGraphBuilder:
-    def __init__(self, vocabulary):
-        self.vocabulary = vocabulary
+    def __init__(self, vocab: Optional[Vocabulary] = None, load_from_disk: bool = False):
+        self.vocabulary = vocab
+        if load_from_disk:
+            self.load_vocabulary_from_disk()
+
+    def load_vocabulary_from_disk(self) -> bool:
+        self.vocabulary = Vocabulary()
+        self.vocabulary.load(DirectoryConfig.VOCAB_PATH)
+        return len(self.vocabulary) > 0
+
+    def ensure_vocabulary(self):
+        if self.vocabulary is None:
+            return self.load_vocabulary_from_disk()
+        return True
 
     def create_graph_data(
         self,
@@ -80,20 +92,30 @@ class NukeGraphBuilder:
         start_node_data: Dict[str, any],
         update_vocab: bool = False,
         min_upstream_nodes: int = 5,
-        include_start_node=False,
+        filter_graphs: bool = False,
+        include_start_node: bool = False,
+        ensure_valid_vocabulary: bool = False
     ) -> Optional[Data]:
         """Creates a PyG graph from serialized json Nuke graph data.
 
         :param serialized_graph: Dictionary containing the entire graph structure.
         :param start_node_data: Dictionary containing the start node's data.
         :param update_vocab: Whether to update the vocabulary.
-        :param include_start_node: Whether to include the start node in the
-            upstream traversal. Used for model inference only.
         :param min_upstream_nodes: Minimum number of nodes required for a
             valid graph example.
+        :param filter_graphs: Whether to filter out invalid graphs.
+        :param include_start_node: Whether to include the start node in the
+            upstream traversal. Used for model inference only.
+        :param ensure_valid_vocabulary: Whether to ensure the existence of
+            a valid vocabulary json file. Used for model inference only.
         :returns: A PyTorch Geometric Data object containing the processed graph
         :rtype: Data or None.
         """
+        if ensure_valid_vocabulary:
+            valid_vocabulary = self.ensure_vocabulary()
+            if not valid_vocabulary:
+                raise RuntimeError("No valid vocabulary was found!")
+
         nodes = serialized_graph.get("root", {}).get("nodes", {})
         if not nodes:
             raise RuntimeError("No nodes found in serialized graph!")
@@ -104,12 +126,12 @@ class NukeGraphBuilder:
         )
 
         # Ensure a minimum number of upstream nodes for the graph data.
-        if len(upstreams) < min_upstream_nodes:
+        if filter_graphs and len(upstreams) < min_upstream_nodes:
             return None
 
         raw_features = []
         for node_data in upstreams:
-            if update_vocab and self.vocabulary:
+            if update_vocab:
                 self.vocabulary.add(node_data["node_type"])
 
             raw_features.append(get_node_features(node_data, self.vocabulary))

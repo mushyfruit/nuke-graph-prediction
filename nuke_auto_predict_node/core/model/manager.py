@@ -8,7 +8,7 @@ from typing import Optional
 import torch
 from torch_geometric.data import Data
 
-from .main import train_model_gat
+from .main import train_model_gat, TrainingConfig
 from .dataset import Vocabulary, NukeGraphDataset
 from .gat import NukeGATPredictor
 from .constants import (
@@ -17,7 +17,7 @@ from .constants import (
     TrainingPhase,
     TrainingStatus,
 )
-from .utilities import check_state_dict, save_model_checkpoint
+from .utilities import check_state_dict, save_model_checkpoint, check_for_model_on_disk
 from ..nuke.parser import NukeScriptParser
 from ..nuke.serialization import NukeGraphSerializer
 
@@ -74,18 +74,17 @@ class NukeNodePredictor:
 
     def load(self):
         # Retrieve the checkpoint's path.
-        model_checkpoint_path = os.path.join(
-            DirectoryConfig.MODEL_PATH, f"{self.model_name}_model.pt"
-        )
-        if not os.path.exists(model_checkpoint_path):
-            raise FileNotFoundError(
-                f"Model {self.model_name} not found at {model_checkpoint_path}"
-            )
+        if not check_for_model_on_disk():
+            log.info(f"Model {self.model_name} not found on disk. Skipping load.")
+            return False
 
         if not os.path.exists(DirectoryConfig.VOCAB_PATH):
             raise FileNotFoundError(f"Vocab {DirectoryConfig.VOCAB_PATH} not found")
 
         # Load the model checkpoint.
+        model_checkpoint_path = os.path.join(
+            DirectoryConfig.MODEL_PATH, f"{MODEL_NAME}_model.pt"
+        )
         checkpoint = torch.load(model_checkpoint_path, map_location=self.device)
 
         # Populate the model's stored vocabulary.
@@ -107,14 +106,18 @@ class NukeNodePredictor:
         # Set model into inference mode.
         self._model.eval()
 
-    def get_training_model(self, fine_tune=False):
+        return True
+
+    def get_training_model(self, dataset, fine_tune=False):
+        # TODO: Specify model settings via new python panel page.
+        config = TrainingConfig()
         training_model = NukeGATPredictor(
             num_features=4,
-            num_classes=len(self.vocab),
-            hidden_channels=self._model.hidden_channels,
-            num_layers=self._model.num_layers,
-            heads=self._model.heads,
-            dropout=self._model.dropout,
+            num_classes=len(dataset.vocab),
+            hidden_channels=config.hidden_channels,
+            num_layers=config.num_layers,
+            heads=config.num_heads,
+            dropout=config.dropout,
         )
 
         if fine_tune:
@@ -167,7 +170,7 @@ class NukeNodePredictor:
             self.status_queue.safe_put(
                 TrainingStatus(
                     phase=TrainingPhase.TRAINING,
-                    label="Starting model training!",
+                    label="Starting model training...",
                     progress=0.0,
                 )
             )
@@ -181,7 +184,9 @@ class NukeNodePredictor:
                 f"fine-tuning: {enable_fine_tuning}"
             )
 
-            training_model = self.get_training_model(fine_tune=enable_fine_tuning)
+            training_model = self.get_training_model(
+                dataset, fine_tune=enable_fine_tuning
+            )
             trained_model = train_model_gat(
                 dataset,
                 training_model,
@@ -221,6 +226,10 @@ class NukeNodePredictor:
         return self.status_queue.get_latest()
 
     def predict(self, pyg_graph_data: Data):
+        if self._model is None:
+            if not self.load():
+                raise RuntimeError("Model is not loaded!")
+
         test_data = pyg_graph_data.to(self.device)
 
         # Disable gradient computation.

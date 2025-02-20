@@ -1,25 +1,25 @@
 import os
 import json
-from functools import lru_cache
 from typing import Dict, Optional
 
 import nuke
 
-from .request_handler import get_request_handler
+from .request_handler import RequestHandler
 from .utilities import get_all_parameters
 from ..logging_config import get_logger
+from ..ui import prediction_panel
+from ..core.model.utilities import check_for_model_on_disk
 
 log = get_logger(__name__)
 
+_prediction_manager = None
 
-@lru_cache(maxsize=1)
+
 def get_prediction_manager():
-    return PredictionManager()
-
-
-def perform_recommendation(node_name=None):
-    manager = get_prediction_manager()
-    manager.perform_recommendation(node_name=node_name)
+    global _prediction_manager
+    if not _prediction_manager:
+        _prediction_manager = PredictionManager()
+    return _prediction_manager
 
 
 class PredictionManager:
@@ -31,13 +31,18 @@ class PredictionManager:
 
     def __init__(self):
         self._vocabulary: Dict[str, int] = {}
-        self._request_handler = get_request_handler()
+        self._request_handler = RequestHandler()
         self._min_node_requirement = 3
+        self._panel = prediction_panel.get_panel_instance()
 
+        self._model_exists = check_for_model_on_disk()
         self.load_model_vocab()
 
     def load_model_vocab(self):
         from .. import model_cnst
+
+        if not self._model_exists:
+            return
 
         if not os.path.exists(model_cnst.DirectoryConfig.VOCAB_PATH):
             return
@@ -48,49 +53,78 @@ class PredictionManager:
         except (json.JSONDecodeError, IOError) as e:
             log.error(f"Failed to load vocabulary: {str(e)}")
 
-    def perform_recommendation(self, node_name=None):
+    def perform_recommendation(self, node_name: Optional[str] = None):
         """Retrieves the next-node predictions for the given or selected node.
 
         :param node_name: Optional node name to perform predictions for.
         """
         try:
+            target_node = self._get_target_node(node_name)
+            if not target_node:
+                return
+
+            # Ensure the node has inputs/outputs.
+            if not self._validate_node_for_prediction(target_node):
+                return
+
+            error_msg = None
+            if not self._model_exists:
+                error_msg = "Please train a local model first!"
+
+            if not error_msg and not self._vocabulary:
+                error_msg = (
+                    "No model vocabulary found! Please train a local model first."
+                )
+
+            log.info(f"Model exists: {self._model_exists}")
+
+            if error_msg:
+                self._panel.update_training_page_label(error_msg)
+                return None
+
             serialized_graph_data = self._serialize_upstream(node_name=node_name)
             if not serialized_graph_data:
                 return
 
             root_nodes = serialized_graph_data["root"]["nodes"]
             if len(root_nodes) <= self._min_node_requirement:
-                log.info("Not enough nodes for meaningful prediction!")
+                msg = f"Not enough upstream nodes to predict for {target_node.name()}!"
+                self._panel.update_training_page_label(msg)
+                log.info(msg)
                 return
 
-            log.info("Making prediction POST request...")
             self._process_prediction(serialized_graph_data)
 
         except Exception as e:
             log.error(f"Error during recommendation: {str(e)}")
+
+    def refresh_manager(self):
+        # Check if the model now exists on disk.
+        model_exists = check_for_model_on_disk()
+        if not model_exists:
+            return
+
+        if not self._model_exists:
+            self._panel.update_training_page_label("Found valid PyTorch model.")
+
+        self._model_exists = True
+        self.load_model_vocab()
 
     def _process_prediction(self, graph_data: Dict) -> None:
         prediction = self._request_handler.post("predict", graph_data)
         if not prediction:
             return
 
-        from ..ui import prediction_panel
-
-        panel = prediction_panel.get_panel_instance()
-        if not panel:
+        if not self._panel:
             log.info(f"Prediction: {prediction}")
             return
 
         selected_node = nuke.selectedNode()
-        panel.update_prediction_state(selected_node.fullName(), prediction)
+        self._panel.update_prediction_state(selected_node.fullName(), prediction)
 
     def _serialize_upstream(self, node_name: Optional[str] = None) -> Optional[Dict]:
         selected = self._get_target_node(node_name=node_name)
         if not selected:
-            return None
-
-        if not self._vocabulary:
-            log.error("No model vocabulary found! Please train a local model first.")
             return None
 
         serialized_nodes = self.traverse_upstream(selected)
@@ -135,7 +169,13 @@ class PredictionManager:
         return target_nodes
 
     @staticmethod
-    def _is_group_or_gizmo(node: nuke.Node):
+    def _validate_node_for_prediction(node: nuke.Node) -> bool:
+        if not node or node.maxOutputs() < 1 or node.inputs() < 1:
+            return False
+        return True
+
+    @staticmethod
+    def _is_group_or_gizmo(node: nuke.Node) -> bool:
         return node.Class() in {"Group", "Gizmo"} or "gizmo_file" in node.knobs()
 
     @staticmethod
@@ -146,7 +186,7 @@ class PredictionManager:
         selected = nuke.selectedNode()
         if not selected:
             nuke.message("Please select a node!")
-            return
+            return None
 
         return selected
 

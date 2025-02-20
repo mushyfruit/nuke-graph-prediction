@@ -4,15 +4,9 @@ import urllib.request
 from urllib.error import URLError, HTTPError
 
 from contextlib import contextmanager
-from functools import lru_cache
 from typing import Dict, Any, Optional, List
 
 log = logging.getLogger(__name__)
-
-
-@lru_cache(maxsize=1)
-def get_request_handler():
-    return RequestHandler(f"http://127.0.0.1:8000/")
 
 
 class NukeRequestError(Exception):
@@ -29,8 +23,8 @@ class NukeRequestError(Exception):
 
 
 class RequestHandler:
-    def __init__(self, base_url, timeout=1):
-        self.base_url = base_url
+    def __init__(self, base_url: Optional[str] = None, timeout: int = 1):
+        self.base_url = base_url or "http://127.0.0.1:8000/"
         self.timeout = timeout
 
     @contextmanager

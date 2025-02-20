@@ -31,14 +31,14 @@ def show_prediction_panel():
     return panel.addToPane(pane=existing_pane)
 
 
-def create_prediction_widget_instance(request_handler=None, prediction_manager=None):
+def create_prediction_widget_instance():
     from .prediction_widget import PredictionWidget
-    from ..api.request_handler import get_request_handler
+    from ..api.request_handler import RequestHandler
     from ..api.recommendation import get_prediction_manager
 
     try:
-        manager = prediction_manager or get_prediction_manager()
-        handler = request_handler or get_request_handler()
+        manager = get_prediction_manager()
+        handler = RequestHandler()
         return PredictionWidget(handler, manager)
     except Exception as e:
         raise RuntimeError(f"Failed to create prediction widget: {e}")
@@ -63,6 +63,11 @@ class PredictionPanel(nukescripts.panels.PythonPanel):
         self.prediction_widget.setFlag(nuke.STARTLINE)
         self.addKnob(self.prediction_widget)
 
+    def update_training_page_label(self, label: str):
+        prediction_widget = self.prediction_widget.getObject()
+        if prediction_widget:
+            prediction_widget.update_prediction_page_status(label)
+
     def update_prediction_state(
         self, selected_node: str, prediction: Dict[str, List[Tuple[str, float]]]
     ):
@@ -70,3 +75,4 @@ class PredictionPanel(nukescripts.panels.PythonPanel):
         if prediction_widget:
             prediction_widget.update_selected_node(selected_node)
             prediction_widget.update_prediction(prediction)
+            prediction_widget.update_prediction_page_status("")

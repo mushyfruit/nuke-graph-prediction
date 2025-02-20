@@ -31,6 +31,7 @@ class TrainingConfig:
     num_workers: int = 4
 
     # Model Parameters
+    num_heads: int = 8
     num_layers: int = 4
     hidden_channels: int = 256
     dropout: float = 0.2
@@ -50,6 +51,7 @@ def main():
         num_classes=len(dataset.vocab),
         hidden_channels=config.hidden_channels,
         dropout=config.dropout,
+        heads=config.num_heads,
         num_layers=config.num_layers,
     )
     trained_model = train_model_gat(dataset, model, config)
@@ -97,6 +99,11 @@ def train_model_gat(
         config = TrainingConfig()
 
     # Compile the model prior to training.
+    if status_queue:
+        status_queue.safe_put(
+            TrainingStatus(TrainingPhase.TRAINING, label="Compiling model...")
+        )
+
     model = torch.compile(model)
 
     device_type = "cuda" if torch.cuda.is_available() else "cpu"
@@ -145,11 +152,6 @@ def train_model_gat(
     best_val_accuracy = 0
     best_model_state = None
     start_time = time.time()
-
-    if status_queue:
-        status_queue.safe_put(
-            TrainingStatus(TrainingPhase.TRAINING, label="Beginning model training...")
-        )
 
     for epoch in range(config.epochs):
         # Set the model to 'training' mode.

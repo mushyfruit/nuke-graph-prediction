@@ -16,7 +16,7 @@ from typing import List, Dict, Optional, Tuple
 app = FastAPI()
 
 predictor = NukeNodePredictor()
-converter = NukeGraphBuilder(predictor.vocab)
+converter = NukeGraphBuilder(load_from_disk=True)
 
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -79,7 +79,9 @@ async def predict(request: PredictionRequest):
         log.info(f"Predicting node {request.start_node}")
         nodes = request.root.nodes
         start_node = nodes[request.start_node].model_dump()
-        pyg_graph_data = converter.create_graph_data(request.model_dump(), start_node)
+        pyg_graph_data = converter.create_graph_data(
+            request.model_dump(), start_node, filter_graphs=False, ensure_valid_vocabulary=True
+        )
         prediction = predictor.predict(pyg_graph_data)
         return PredictionResponse(prediction=prediction)
     except Exception as e:

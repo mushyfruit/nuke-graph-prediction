@@ -3,16 +3,16 @@ import nukescripts
 
 from .server.launcher import launch_inference_service
 from .ui import prediction_panel
-from .api.recommendation import perform_recommendation
+from .api.recommendation import get_prediction_manager
 
 _model_vocabulary = None
 
 
 def on_startup():
     """Initialize ML service on Nuke startup"""
+    global _prediction_manager
     try:
         launch_inference_service()
-
         register_prediction_panel()
 
         nuke.addKnobChanged(predict_selected)
@@ -28,9 +28,17 @@ def on_startup():
 
 
 def predict_selected():
-    if nuke.thisKnob().name() != "selected":
+    knob = nuke.thisKnob()
+    if knob is None or knob.name() != "selected":
         return
-    perform_recommendation()
+
+    # Return early when deselecting nodes.
+    if not knob.value():
+        return
+
+    prediction_manager = get_prediction_manager()
+    prediction_manager.perform_recommendation()
+
 
 
 def register_prediction_panel():
