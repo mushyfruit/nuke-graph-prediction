@@ -6,7 +6,7 @@ import nukescripts
 from PySide2 import QtWidgets, QtCore
 
 from ..api import RequestHandler, PredictionManager
-from ..core.model.constants import TrainingPhase
+from ..core.model.constants import TrainingPhase, DirectoryConfig, MODEL_NAME
 from ..logging_config import get_logger
 
 from typing import List, Tuple, Dict
@@ -127,16 +127,39 @@ class PredictionWidget(QtWidgets.QWidget):
 
         self.validation_accuracy_value = QtWidgets.QLineEdit(self)
         stat_layout.addWidget(self.validation_accuracy_value)
-
         training_layout.addLayout(stat_layout)
 
-        button_layout = QtWidgets.QHBoxLayout()
-        button_layout.addStretch(1)
+        bottom_layout = QtWidgets.QHBoxLayout()
 
+        self.memory_allocation_label = QtWidgets.QLabel("Memory Allocation:")
+        self.memory_allocation_value = QtWidgets.QDoubleSpinBox(self)
+        self.memory_allocation_value.setDecimals(1)
+        self.memory_allocation_value.setSingleStep(0.1)
+        self.memory_allocation_value.setRange(0.1, 0.9)
+        self.memory_allocation_value.setValue(0.5)
+
+        self.fine_tune_label = QtWidgets.QLabel("Enable Fine Tuning:")
+        self.fine_tune_checkbox = QtWidgets.QCheckBox(self)
+        self.fine_tune_checkbox.setChecked(True)
+
+        model_checkpoint_path = os.path.join(
+            DirectoryConfig.MODEL_PATH, f"{MODEL_NAME}_model.pt"
+        )
+        if not os.path.exists(model_checkpoint_path):
+            self.fine_tune_checkbox.setChecked(False)
+            self.fine_tune_checkbox.setEnabled(False)
+            self.fine_tune_label.setEnabled(False)
+
+        bottom_layout.addWidget(self.memory_allocation_label)
+        bottom_layout.addWidget(self.memory_allocation_value)
+        bottom_layout.addWidget(self.fine_tune_label)
+        bottom_layout.addWidget(self.fine_tune_checkbox)
+
+        bottom_layout.addStretch(1)
         self.training_btn = QtWidgets.QPushButton("Train")
-        button_layout.addWidget(self.training_btn)
+        bottom_layout.addWidget(self.training_btn)
         self.training_btn.clicked.connect(self._on_training_btn_clicked)
-        training_layout.addLayout(button_layout)
+        training_layout.addLayout(bottom_layout)
 
     def _on_dbl_click(self):
         pass
@@ -148,7 +171,11 @@ class PredictionWidget(QtWidgets.QWidget):
             )
             return
 
-        response = self._request_handler.kickoff_training(self._stored_nuke_files)
+        memory_allocation = self.memory_allocation_value.value()
+        enable_fine_tuning = self.fine_tune_checkbox.isChecked()
+        response = self._request_handler.kickoff_training(
+            self._stored_nuke_files, memory_allocation, enable_fine_tuning
+        )
         if response["status"] == TrainingPhase.SERIALIZING.value:
             self._update_status_label(response.get("label", ""))
             self.status_timer.start()
@@ -168,6 +195,9 @@ class PredictionWidget(QtWidgets.QWidget):
             if status == TrainingPhase.COMPLETE.value:
                 self.status_timer.stop()
                 self.training_btn.setEnabled(True)
+                self.fine_tune_checkbox.setChecked(True)
+                self.fine_tune_checkbox.setEnabled(True)
+                self.fine_tune_label.setEnabled(True)
 
             if response.get("label"):
                 self._update_status_label(response["label"])

@@ -139,7 +139,9 @@ class NukeScriptParser:
                         script_contents
                     )
                 except Exception:
-                    log.info(f"Error parsing script {script_name}: {traceback.format_exc()}")
+                    log.info(
+                        f"Error parsing script {script_name}: {traceback.format_exc()}"
+                    )
                     return
 
         return parsed_scripts

@@ -5,7 +5,7 @@ from urllib.error import URLError, HTTPError
 
 from contextlib import contextmanager
 from functools import lru_cache
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 log = logging.getLogger(__name__)
 
@@ -89,9 +89,13 @@ class RequestHandler:
                 response_body = response.read().decode("utf-8")
                 return json.loads(response_body)
 
-    def kickoff_training(self, file_paths):
+    def kickoff_training(
+        self, file_paths: List[str], memory_allocation: float, enable_fine_tuning: bool
+    ):
         data = {
             "file_paths": file_paths,
+            "memory_allocation": memory_allocation,
+            "enable_fine_tuning": enable_fine_tuning,
         }
 
         log.info("Posted to train.")

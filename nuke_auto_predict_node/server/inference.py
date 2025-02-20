@@ -47,6 +47,8 @@ class PredictionResponse(BaseModel):
 
 class TrainingRequest(BaseModel):
     file_paths: List[str]
+    memory_allocation: float
+    enable_fine_tuning: bool
 
     @field_validator("file_paths")
     def validate_file_paths(cls, v):
@@ -94,7 +96,9 @@ async def train(request: TrainingRequest):
     try:
         # Parse and serialize the scripts!
         log.info("Received a training request!")
-        result = predictor.start_training_pipeline(request.file_paths)
+        result = predictor.start_training_pipeline(
+            request.file_paths, request.memory_allocation, request.enable_fine_tuning
+        )
         return result.to_dict()
 
     except Exception as e:

@@ -2,6 +2,7 @@ import copy
 import time
 import logging
 from dataclasses import dataclass
+from typing import Optional, TYPE_CHECKING
 
 import torch
 from torch_geometric.loader import DataLoader
@@ -12,6 +13,9 @@ from .constants import MODEL_NAME, DirectoryConfig, TrainingStatus, TrainingPhas
 from .utilities import save_model_checkpoint, load_model_checkpoint
 from .dataset import NukeGraphDataset
 from .gat import NukeGATPredictor
+
+if TYPE_CHECKING:
+    from .manager import StatusQueue
 
 log = logging.getLogger(__name__)
 
@@ -83,7 +87,11 @@ def setup_dataloaders(dataset: NukeGraphDataset, config: TrainingConfig):
 
 
 def train_model_gat(
-    dataset, model, config=None, memory_fraction=None, status_queue=None
+    dataset: NukeGraphDataset,
+    model: NukeGATPredictor,
+    config: Optional[TrainingConfig] = None,
+    memory_fraction: Optional[float] = None,
+    status_queue: Optional["StatusQueue"] = None,
 ):
     if config is None:
         config = TrainingConfig()
@@ -98,7 +106,7 @@ def train_model_gat(
     torch._dynamo.config.capture_scalar_outputs = True
     torch.backends.cudnn.benchmark = True
 
-    if memory_fraction is not None:
+    if memory_fraction is not None and torch.cuda.is_available():
         torch.cuda.set_per_process_memory_fraction(memory_fraction)
 
     log.info("Using {} device".format(device))
@@ -139,7 +147,7 @@ def train_model_gat(
     start_time = time.time()
 
     if status_queue:
-        status_queue.put(
+        status_queue.safe_put(
             TrainingStatus(TrainingPhase.TRAINING, label="Beginning model training...")
         )
 
@@ -198,6 +206,8 @@ def train_model_gat(
             # Unpack loss scalar tensor to python value.
             total_loss += loss.item()
 
+            del batch, predictions, loss, predicted
+
         avg_train_loss = total_loss / len(train_loader)
         train_accuracy = 100 * correct / total
 
@@ -241,7 +251,7 @@ def train_model_gat(
 
         if status_queue:
             current_epoch = epoch + 1
-            status_queue.put(
+            status_queue.safe_put(
                 TrainingStatus(
                     TrainingPhase.TRAINING,
                     current_epoch=current_epoch,
