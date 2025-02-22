@@ -118,6 +118,7 @@ class PredictionManager:
 
         except Exception as e:
             log.error(f"Error during recommendation: {str(e)}")
+            self._panel.update_training_page_label(str(e))
 
     def refresh_manager(self):
         # Check if the model now exists on disk.

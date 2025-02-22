@@ -10,11 +10,14 @@ _model_vocabulary = None
 def on_startup():
     """Initialize ML service on Nuke startup"""
     try:
+        # Start inference service in a separate thread.
         launch_inference_service()
+
+        # Register the python panel.
         register_prediction_panel()
 
         nuke.menu("Nuke").addCommand(
-            "Recommendation/PerformTest",
+            "Edit/Node/Auto-Predict",
             "nuke_auto_predict_node.recommendation.perform_recommendation()",
             "ctrl+shift+t",
         )
