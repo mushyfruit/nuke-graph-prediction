@@ -277,7 +277,7 @@ def train_model_gat(
     return model
 
 
-def load_for_inference(device="cuda"):
+def load_for_inference(device: Optional[str] = "cuda"):
     model, _, vocab = load_model_checkpoint(MODEL_NAME, device)
     model.eval()
     return model, vocab

@@ -1,13 +1,17 @@
 import os
 import json
 import logging
+from typing import Dict, Any, Optional, List, TYPE_CHECKING
 
 from .constants import DirectoryConfig, MODEL_NAME
+
+if TYPE_CHECKING:
+    from .gat import NukeGATPredictor
 
 log = logging.getLogger(__name__)
 
 
-def check_for_model_on_disk():
+def check_for_model_on_disk() -> bool:
     model_checkpoint_path = os.path.join(
         DirectoryConfig.MODEL_PATH, f"{MODEL_NAME}_model.pt"
     )
@@ -42,7 +46,7 @@ def json_back_to_nk():
             log.info(f"Restored: {new_path}")
 
 
-def save_model_checkpoint(model, model_name):
+def save_model_checkpoint(model: "NukeGATPredictor", model_name: str):
     import torch
 
     os.makedirs(DirectoryConfig.MODEL_PATH, exist_ok=True)
@@ -61,7 +65,7 @@ def save_model_checkpoint(model, model_name):
     log.info(f"Model saved to {DirectoryConfig.MODEL_PATH}")
 
 
-def load_model_checkpoint(model_name: str, device="cuda"):
+def load_model_checkpoint(model_name: str, device: Optional[str] = "cuda"):
     import torch
 
     model_checkpoint_path = os.path.join(
@@ -102,7 +106,7 @@ def load_model_checkpoint(model_name: str, device="cuda"):
     return model, scaler, vocab
 
 
-def check_state_dict(state_dict, unwanted_prefixes=None):
+def check_state_dict(state_dict: Dict[str, Any], unwanted_prefixes: List[str] = None):
     if unwanted_prefixes is None:
         unwanted_prefixes = ["_orig_mod.", "module."]
 

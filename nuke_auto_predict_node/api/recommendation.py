@@ -35,8 +35,31 @@ class PredictionManager:
         self._min_node_requirement = 3
         self._panel = prediction_panel.get_panel_instance()
 
+        self._callback_installed = False
+
         self._model_exists = check_for_model_on_disk()
         self.load_model_vocab()
+
+    def enable_callback(self):
+        if not self._callback_installed:
+            nuke.addKnobChanged(self.predict_selected)
+            self._callback_installed = True
+
+    def disable_callback(self):
+        if self._callback_installed:
+            nuke.removeKnobChanged(self.predict_selected)
+            self._callback_installed = False
+
+    def predict_selected(self):
+        knob = nuke.thisKnob()
+        if knob is None or knob.name() != "selected":
+            return
+
+        # Return early when deselecting nodes.
+        if not knob.value():
+            return
+
+        self.perform_recommendation()
 
     def load_model_vocab(self):
         from .. import model_cnst
@@ -75,8 +98,6 @@ class PredictionManager:
                 error_msg = (
                     "No model vocabulary found! Please train a local model first."
                 )
-
-            log.info(f"Model exists: {self._model_exists}")
 
             if error_msg:
                 self._panel.update_training_page_label(error_msg)

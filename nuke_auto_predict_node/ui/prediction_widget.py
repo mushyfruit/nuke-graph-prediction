@@ -257,6 +257,13 @@ class PredictionWidget(QtWidgets.QWidget):
         header_layout.addWidget(self.selected_node_label)
         header_layout.addStretch(1)
 
+        self.callback_label = QtWidgets.QLabel("Predict on Selection:")
+        self.callback_checkbox = QtWidgets.QCheckBox()
+        self.callback_checkbox.toggled.connect(self._on_callback_toggle)
+
+        header_layout.addWidget(self.callback_label)
+        header_layout.addWidget(self.callback_checkbox)
+
         self.prediction_tree = QtWidgets.QTreeWidget()
         self.prediction_tree.itemDoubleClicked.connect(
             self._on_prediction_double_clicked
@@ -294,6 +301,12 @@ class PredictionWidget(QtWidgets.QWidget):
         prediction_layout.addWidget(self.prediction_tree)
         prediction_layout.addLayout(button_layout)
         prediction_layout.addLayout(bottom_status_layout)
+
+    def _on_callback_toggle(self, enabled):
+        if enabled:
+            self._prediction_manager.enable_callback()
+        else:
+            self._prediction_manager.disable_callback()
 
     def _on_prediction_double_clicked(self, item, column):
         node_type = item.data(0, QtCore.Qt.UserRole)

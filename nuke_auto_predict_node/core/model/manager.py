@@ -3,7 +3,7 @@ import queue
 import logging
 import threading
 import traceback
-from typing import Optional
+from typing import Optional, List, Tuple
 
 import torch
 from torch_geometric.data import Data
@@ -29,7 +29,7 @@ class StatusQueue(queue.Queue):
         super(StatusQueue, self).__init__(maxsize=maxsize)
         self._lock = threading.Lock()
 
-    def safe_put(self, status: TrainingStatus):
+    def safe_put(self, status: TrainingStatus) -> bool:
         with self._lock:
             try:
                 self.put(status, block=False)
@@ -42,7 +42,7 @@ class StatusQueue(queue.Queue):
                     log.warning("Error: failed to put status to queue!")
                     return False
 
-    def safe_get(self):
+    def safe_get(self) -> Optional[TrainingStatus]:
         try:
             return self.get_nowait()
         except queue.Empty:
@@ -72,7 +72,7 @@ class NukeNodePredictor:
 
         self.load()
 
-    def load(self):
+    def load(self) -> bool:
         # Retrieve the checkpoint's path.
         if not check_for_model_on_disk():
             log.info(f"Model {self.model_name} not found on disk. Skipping load.")
@@ -108,7 +108,9 @@ class NukeNodePredictor:
 
         return True
 
-    def get_training_model(self, dataset, fine_tune=False):
+    def get_training_model(
+        self, dataset: NukeGraphDataset, fine_tune: bool = False
+    ) -> NukeGATPredictor:
         # TODO: Specify model settings via new python panel page.
         config = TrainingConfig()
         training_model = NukeGATPredictor(
@@ -126,8 +128,8 @@ class NukeNodePredictor:
         return training_model
 
     def start_training_pipeline(
-        self, file_paths, memory_allocation, enable_fine_tuning
-    ):
+        self, file_paths: List[str], memory_allocation: float, enable_fine_tuning: bool
+    ) -> TrainingStatus:
         if self._is_training.is_set():
             return TrainingStatus(
                 phase=TrainingPhase.SERIALIZING, label="Pipeline already in progress"
@@ -152,8 +154,8 @@ class NukeNodePredictor:
         )
 
     def _training_thread_target(
-        self, file_paths, memory_allocation, enable_fine_tuning
-    ):
+        self, file_paths: List[str], memory_allocation: float, enable_fine_tuning: bool
+    ) -> None:
         try:
             # Start serialization.
             output_dir = self.parse_and_serialize_scripts(file_paths)
@@ -214,7 +216,7 @@ class NukeNodePredictor:
         finally:
             self._is_training.clear()
 
-    def get_training_status(self):
+    def get_training_status(self) -> TrainingStatus:
         """Get current training status"""
         if self.status_queue.empty():
             if not self._is_training.is_set():
@@ -225,7 +227,7 @@ class NukeNodePredictor:
 
         return self.status_queue.get_latest()
 
-    def predict(self, pyg_graph_data: Data):
+    def predict(self, pyg_graph_data: Data) -> List[Tuple[int, float]]:
         if self._model is None:
             if not self.load():
                 raise RuntimeError("Model is not loaded!")
@@ -254,7 +256,9 @@ class NukeNodePredictor:
 
             return node_predictions
 
-    def parse_and_serialize_scripts(self, script_paths, output_dir=None):
+    def parse_and_serialize_scripts(
+        self, script_paths: List[str], output_dir: Optional[str] = None
+    ) -> str:
         if output_dir is None:
             output_dir = DirectoryConfig.MODEL_DATA_FOLDER
 

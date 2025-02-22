@@ -80,7 +80,10 @@ async def predict(request: PredictionRequest):
         nodes = request.root.nodes
         start_node = nodes[request.start_node].model_dump()
         pyg_graph_data = converter.create_graph_data(
-            request.model_dump(), start_node, filter_graphs=False, ensure_valid_vocabulary=True
+            request.model_dump(),
+            start_node,
+            filter_graphs=False,
+            ensure_valid_vocabulary=True,
         )
         prediction = predictor.predict(pyg_graph_data)
         return PredictionResponse(prediction=prediction)

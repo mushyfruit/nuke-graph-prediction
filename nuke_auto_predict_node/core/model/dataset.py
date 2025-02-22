@@ -11,7 +11,7 @@ from .constants import NukeScript, DirectoryConfig, VOCAB
 import torch
 from torch_geometric.data import Data, Dataset
 
-from typing import Dict, Optional
+from typing import Dict, Optional, Any, List
 
 log = logging.getLogger(__name__)
 
@@ -39,12 +39,10 @@ class Vocabulary:
             return idx
         return self._type_to_idx[node_type]
 
-    def load(self, file_path) -> None:
+    def load(self, file_path: str) -> None:
         """Loads the vocabulary from a JSON file."""
         if not os.path.exists(file_path):
-            log.warning(
-                f"Vocabulary file {file_path} not found."
-            )
+            log.warning(f"Vocabulary file {file_path} not found.")
 
         try:
             with open(file_path, "r") as f:
@@ -71,7 +69,9 @@ class Vocabulary:
 
 
 class NukeGraphBuilder:
-    def __init__(self, vocab: Optional[Vocabulary] = None, load_from_disk: bool = False):
+    def __init__(
+        self, vocab: Optional[Vocabulary] = None, load_from_disk: bool = False
+    ):
         self.vocabulary = vocab
         if load_from_disk:
             self.load_vocabulary_from_disk()
@@ -94,7 +94,7 @@ class NukeGraphBuilder:
         min_upstream_nodes: int = 5,
         filter_graphs: bool = False,
         include_start_node: bool = False,
-        ensure_valid_vocabulary: bool = False
+        ensure_valid_vocabulary: bool = False,
     ) -> Optional[Data]:
         """Creates a PyG graph from serialized json Nuke graph data.
 
@@ -173,11 +173,10 @@ class NukeGraphBuilder:
 class NukeGraphDataset(Dataset):
     def __init__(
         self,
-        root_dir=None,
-        transform=None,
-        force_rebuild=False,
+        root_dir: Optional[str] = None,
+        force_rebuild: bool = False,
     ):
-        super().__init__(root=root_dir, transform=transform)
+        super().__init__(root=root_dir)
         self.root_dir = root_dir
         self.file_paths = []
 
@@ -200,7 +199,7 @@ class NukeGraphDataset(Dataset):
         if not force_rebuild:
             self._load_cache()
 
-    def _load_cache(self):
+    def _load_cache(self) -> None:
         # Check if the files have already been processed.
         if os.path.exists(self.metadata_file):
             with open(self.metadata_file, "r") as f:
@@ -211,7 +210,7 @@ class NukeGraphDataset(Dataset):
             saved_data = torch.load(self.processed_graphs_file, weights_only=False)
             self.examples = saved_data["examples"]
 
-    def process_all_graphs_in_dir(self, target_dir):
+    def process_all_graphs_in_dir(self, target_dir: str) -> None:
         for file in os.listdir(target_dir):
             if file.endswith(".json"):
                 self.file_paths.append(os.path.join(target_dir, file))
@@ -232,7 +231,7 @@ class NukeGraphDataset(Dataset):
 
         log.info(f"Processed {len(self.examples)} total examples")
 
-    def save_graph_state(self):
+    def save_graph_state(self) -> None:
         # Ensure the metadata parent dir exists.
         os.makedirs(DirectoryConfig.DATA_CACHE_PATH, exist_ok=True)
 
@@ -246,7 +245,7 @@ class NukeGraphDataset(Dataset):
         self._save_metadata()
         self.vocab.save(self.vocabulary_path)
 
-    def _save_metadata(self):
+    def _save_metadata(self) -> None:
         with open(self.metadata_file, "w") as f:
             json.dump(
                 {
@@ -257,7 +256,11 @@ class NukeGraphDataset(Dataset):
             )
 
     def generate_graph_training_examples(
-        self, data, min_context=3, max_context=25, stride=3
+        self,
+        data: Dict[str, Any],
+        min_context: Optional[int] = 3,
+        max_context: Optional[int] = 25,
+        stride: Optional[int] = 3,
     ):
         root_group = data[NukeScript.ROOT]
         nodes = root_group[NukeScript.NODES]
@@ -287,7 +290,7 @@ class NukeGraphDataset(Dataset):
 
         return examples
 
-    def len(self):
+    def len(self) -> int:
         return len(self.file_paths)
 
     def get(self, idx: int) -> Data:
@@ -304,8 +307,11 @@ class NukeGraphDataset(Dataset):
 
 
 def get_upstream_nodes(
-    all_nodes_dict, start_node_dict, max_context=1000, include_start=False
-):
+    all_nodes_dict: Dict[str, Any],
+    start_node_dict: Dict[str, Any],
+    max_context: Optional[int] = 1000,
+    include_start: bool = False,
+) -> List[Dict[str, Any]]:
     queue = deque([start_node_dict])
     upstream_nodes = [start_node_dict] if include_start else []
     visited = {start_node_dict["name"]}
@@ -333,7 +339,10 @@ def get_upstream_nodes(
     return upstream_nodes
 
 
-def normalize_features(raw_features, numerical_indices=None):
+def normalize_features(
+    raw_features: List[List[Any]],
+    numerical_indices: Optional[List[int]] = None,
+) -> List[List[Any]]:
     if numerical_indices is None:
         numerical_indices = [1, 2]
 
@@ -354,7 +363,7 @@ def normalize_features(raw_features, numerical_indices=None):
     return normalized.tolist()
 
 
-def get_node_features(node_data, vocab: Vocabulary):
+def get_node_features(node_data: Dict[str, Any], vocab: Vocabulary) -> List[Any]:
     node_type = node_data["node_type"]
     is_merge = 1 if node_type in {"Merge2", "Merge"} else 0
     return [
