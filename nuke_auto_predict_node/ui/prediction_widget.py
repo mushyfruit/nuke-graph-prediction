@@ -3,11 +3,12 @@ import glob
 import nuke
 import nukescripts
 
-from PySide2 import QtWidgets, QtCore
+from PySide2 import QtWidgets, QtCore, QtGui
 
 from ..api import RequestHandler, PredictionManager
 from ..core.model.constants import TrainingPhase
 from ..core.model.utilities import check_for_model_on_disk
+from ..server.launcher import get_inference_launcher
 from ..logging_config import get_logger
 
 from typing import List, Tuple, Dict
@@ -35,8 +36,13 @@ class PredictionWidget(QtWidgets.QWidget):
         self.status_timer.timeout.connect(self._check_training_status)
         self.status_timer.setInterval(1000)
 
+        self.health_timer = QtCore.QTimer()
+        self.health_timer.timeout.connect(self.update_server_status)
+
         self.setup_ui()
         self._check_for_model_on_disk()
+
+        self.health_timer.start(2500)
 
     def _check_for_model_on_disk(self):
         model_exists = check_for_model_on_disk()
@@ -57,7 +63,7 @@ class PredictionWidget(QtWidgets.QWidget):
         self._setup_prediction_page()
         self._setup_training_page()
 
-        self.tab_widget.addTab(self.prediction_page, "Prediction")
+        self.tab_widget.addTab(self.prediction_page, "Inference")
         self.tab_widget.addTab(self.training_page, "Training")
 
     def _on_folder_selected(self, folder_path):
@@ -97,7 +103,42 @@ class PredictionWidget(QtWidgets.QWidget):
         self.training_page = QtWidgets.QWidget()
         training_layout = QtWidgets.QVBoxLayout(self.training_page)
 
-        self.file_input = FileInputWidget()
+        status_layout = QtWidgets.QHBoxLayout()
+        self.status_label = QtWidgets.QLabel("Server Status:")
+        self.status_label.setAlignment(QtCore.Qt.AlignVCenter)
+        self.status_indicator = QtWidgets.QLabel()
+        self.status_indicator.setAlignment(QtCore.Qt.AlignVCenter)
+        self.status_indicator.setText("●")
+        self.status_indicator.setStyleSheet("color: green;")
+
+        self.host_lbl = QtWidgets.QLabel("Host:")
+        self.host = QtWidgets.QLineEdit("127.0.0.1")
+        self.host.setMaximumWidth(75)
+
+        self.port_lbl = QtWidgets.QLabel("Port:")
+        self.port = QtWidgets.QLineEdit(self._request_handler.port)
+        self.port.setMaximumWidth(40)
+
+        icon_path = os.path.join(os.path.dirname(__file__), "icons", "refresh.png")
+        self.restart_btn = QtWidgets.QPushButton()
+        self.restart_btn.setIcon(QtGui.QIcon(icon_path))
+        self.restart_btn.setFixedSize(24, 24)
+        self.restart_btn.clicked.connect(self._restart_inference_server)
+
+        status_layout.addWidget(self.status_label)
+        status_layout.addWidget(self.status_indicator)
+        status_layout.addStretch()
+        status_layout.addWidget(self.host_lbl)
+        status_layout.addWidget(self.host)
+        status_layout.addSpacing(3)
+        status_layout.addWidget(self.port_lbl)
+        status_layout.addWidget(self.port)
+        status_layout.addSpacing(5)
+        status_layout.addWidget(self.restart_btn)
+
+        training_layout.addLayout(status_layout)
+
+        self.file_input = FileInputWidget("Scripts Folder:")
         self.file_input.folder_selected.connect(self._on_folder_selected)
         training_layout.addWidget(self.file_input)
 
@@ -168,6 +209,32 @@ class PredictionWidget(QtWidgets.QWidget):
         bottom_layout.addWidget(self.training_btn)
         self.training_btn.clicked.connect(self._on_training_btn_clicked)
         training_layout.addLayout(bottom_layout)
+
+    def update_server_status(self):
+        if self._check_server_health():
+            self.status_indicator.setText("●")
+            self.status_indicator.setStyleSheet("color: green;")
+        else:
+            self.status_indicator.setText("○")
+            self.status_indicator.setStyleSheet("color: red;")
+
+    def _restart_inference_server(self):
+        host = self.host.text()
+        port = self.port.text()
+
+        inference_launcher = get_inference_launcher()
+        inference_launcher.restart_service(host=host, port=port)
+
+        self._request_handler.set_host(host)
+        self._request_handler.set_port(port)
+
+    def _check_server_health(self):
+        try:
+            response = self._request_handler.get("health")
+            return response.get("status") == "ok"
+        except Exception as e:
+            log.error(e)
+            return False
 
     def _on_dbl_click(self):
         pass
@@ -388,21 +455,20 @@ class PredictionWidget(QtWidgets.QWidget):
 class FileInputWidget(QtWidgets.QWidget):
     folder_selected = QtCore.Signal(str)
 
-    def __init__(self, parent=None):
+    def __init__(self, label=None, parent=None):
         super().__init__(parent)
-
-        # Create layout
         layout = QtWidgets.QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        # Create line edit
+        self.label = None
         self.line_edit = QtWidgets.QLineEdit()
-
-        # Create browse button
         self.browse_button = QtWidgets.QPushButton("Browse")
         self.browse_button.clicked.connect(self.browse_folders)
 
-        # Add widgets to layout
+        if label:
+            self.label = QtWidgets.QLabel(label)
+            layout.addWidget(self.label)
+
         layout.addWidget(self.line_edit)
         layout.addWidget(self.browse_button)
 

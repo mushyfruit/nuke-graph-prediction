@@ -65,6 +65,11 @@ class TrainingRequest(BaseModel):
         return v
 
 
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
+
+
 @app.get("/training_status")
 async def get_training_status():
     """Get current training status"""
@@ -115,4 +120,10 @@ async def train(request: TrainingRequest):
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="127.0.0.1", port=int(sys.argv[1]), log_level="warning")
+    log.info(f"Starting the server on {sys.argv[1]}:{sys.argv[2]}")
+    try:
+        uvicorn.run(
+            app, host=str(sys.argv[1]), port=int(sys.argv[2]), log_level="warning"
+        )
+    except Exception as e:
+        log.error(f"Server failed to start: {e}")

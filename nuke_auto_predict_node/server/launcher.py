@@ -9,6 +9,15 @@ from .constants import DirectoryConfig
 
 log = get_logger(__name__)
 
+_inference_launcher = None
+
+
+def get_inference_launcher():
+    global _inference_launcher
+    if _inference_launcher is None:
+        _inference_launcher = InferenceLauncher()
+    return _inference_launcher
+
 
 def create_launcher_venv():
     nuke_python_parent_dir = os.path.dirname(sys.executable)
@@ -27,14 +36,21 @@ class InferenceLauncher:
         atexit.register(self.stop_service)
         self.setup_signal_handlers()
 
-    def start_service(self, port=None):
+    def start_service(self, host=None, port=None):
         env = self.get_subprocess_env()
 
         port = port or os.environ.get("AUTO_PREDICT_PORT", "8080")
-        cmd = [str(self.python_path), DirectoryConfig.INFERENCE_SCRIPT_PATH, str(port)]
+        host = host or "127.0.0.1"
 
-        log.info(f"Started the inference subprocess...")
-        with open(DirectoryConfig.SERVER_LOG_FILE, "w") as log_file:
+        cmd = [
+            str(self.python_path),
+            DirectoryConfig.INFERENCE_SCRIPT_PATH,
+            str(host),
+            str(port),
+        ]
+
+        log.debug("Started the inference subprocess...")
+        with open(DirectoryConfig.SERVER_LOG_FILE, "a") as log_file:
             self.process = subprocess.Popen(
                 cmd,
                 env=env,
@@ -58,9 +74,15 @@ class InferenceLauncher:
             self.stop_service()
 
     def stop_service(self):
-        log.info("Terminated the subprocess...")
+        log.info("Terminated the inference subprocess...")
         if self.process is not None:
             self.process.terminate()
+            try:
+                self.process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                log.warning("Force-killing inference subprocess.")
+                self.process.kill()
+
             self.process = None
 
     def get_subprocess_env(self):
@@ -97,11 +119,15 @@ class InferenceLauncher:
 
         return env
 
+    def restart_service(self, host=None, port=None):
+        self.stop_service()
+        return self.start_service(host=host, port=port)
+
 
 def launch_inference_service():
     # Ensure the inference service's virtual env exists.
     if not os.path.exists(DirectoryConfig.VENV_DIR):
         create_launcher_venv()
 
-    launcher = InferenceLauncher()
+    launcher = get_inference_launcher()
     launcher.start_service()

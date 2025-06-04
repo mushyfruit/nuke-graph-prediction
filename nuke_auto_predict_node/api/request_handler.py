@@ -48,6 +48,20 @@ class RequestHandler:
         log.debug(f"Starting the RequestHandler for {self.base_url}")
         self._initialized = True
 
+    def set_host(self, host):
+        if not host.startswith("http"):
+            host = f"http://{host}"
+
+        self.host = host
+        self._update_base_url()
+
+    def set_port(self, port):
+        self.port = port
+        self._update_base_url()
+
+    def _update_base_url(self):
+        self.base_url = f"{self.host}:{self.port}/"
+
     @contextmanager
     def _handle_request_error(self):
         try:
