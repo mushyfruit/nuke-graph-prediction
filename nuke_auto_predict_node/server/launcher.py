@@ -1,16 +1,21 @@
 import os
+import sys
 import atexit
 import signal
 import subprocess
-import logging
 
+from ..logging_config import get_logger
 from .constants import DirectoryConfig
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 def create_launcher_venv():
-    subprocess.run(DirectoryConfig.VENV_SETUP_SCRIPT, cwd=os.path.dirname(__file__))
+    nuke_python_parent_dir = os.path.dirname(sys.executable)
+    subprocess.run(
+        [DirectoryConfig.VENV_SETUP_SCRIPT, nuke_python_parent_dir],
+        cwd=DirectoryConfig.BASE_DIR,
+    )
 
 
 class InferenceLauncher:
@@ -22,9 +27,10 @@ class InferenceLauncher:
         atexit.register(self.stop_service)
         self.setup_signal_handlers()
 
-    def start_service(self, port=8000):
+    def start_service(self, port=None):
         env = self.get_subprocess_env()
 
+        port = port or os.environ.get("AUTO_PREDICT_PORT", "8080")
         cmd = [str(self.python_path), DirectoryConfig.INFERENCE_SCRIPT_PATH, str(port)]
 
         log.info(f"Started the inference subprocess...")
@@ -69,8 +75,14 @@ class InferenceLauncher:
         python_dir = f"python{major}.{minor}"
 
         python_path = os.path.join(self.venv_path, "lib", python_dir, "site-packages")
+        python_path_64 = os.path.join(
+            self.venv_path, "lib64", python_dir, "site-packages"
+        )
 
-        paths = [python_path]
+        log.error(f"using {python_path}")
+
+        paths = [python_path, python_path_64]
+
         torch_location = os.getenv("PYTORCH_INSTALL")
         if torch_location:
             target = "lib64" if "lib64" in torch_location else "lib"
@@ -80,6 +92,9 @@ class InferenceLauncher:
                     paths.append(torch_path)
 
         env["PYTHONPATH"] = ":".join(paths)
+
+        log.error(env["PYTHONPATH"])
+
         return env
 
 
@@ -87,7 +102,6 @@ def launch_inference_service():
     # Ensure the inference service's virtual env exists.
     if not os.path.exists(DirectoryConfig.VENV_DIR):
         create_launcher_venv()
-        return
 
     launcher = InferenceLauncher()
     launcher.start_service()

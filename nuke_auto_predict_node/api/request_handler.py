@@ -1,12 +1,14 @@
+import os
 import json
-import logging
 import urllib.request
 from urllib.error import URLError, HTTPError
 
 from contextlib import contextmanager
 from typing import Dict, Any, Optional, List
 
-log = logging.getLogger(__name__)
+from ..logging_config import get_logger
+
+log = get_logger(__name__)
 
 
 class NukeRequestError(Exception):
@@ -23,9 +25,28 @@ class NukeRequestError(Exception):
 
 
 class RequestHandler:
-    def __init__(self, base_url: Optional[str] = None, timeout: int = 1):
-        self.base_url = base_url or "http://127.0.0.1:8000/"
+    _instance = None
+    _initialized = None
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __init__(
+        self, host: Optional[str] = None, port: Optional[int] = None, timeout: int = 1
+    ):
+        if self._initialized:
+            return
+
         self.timeout = timeout
+        self.host = host or "http://127.0.0.1"
+        self.port = port or os.environ.get("AUTO_PREDICT_PORT", "8080")
+
+        self.base_url = f"{self.host}:{self.port}/"
+
+        log.debug(f"Starting the RequestHandler for {self.base_url}")
+        self._initialized = True
 
     @contextmanager
     def _handle_request_error(self):
