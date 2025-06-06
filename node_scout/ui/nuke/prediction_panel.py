@@ -1,6 +1,8 @@
 from functools import lru_cache
 
-from typing import List, Tuple, Dict
+from typing import Any, Dict
+
+from ...logging_config import get_logger
 
 import nuke
 import nukescripts
@@ -12,6 +14,9 @@ BUILT_IN_TABS = [
     "Viewer.1",
     "Toolbar.1",
 ]
+
+
+log = get_logger(__name__)
 
 
 @lru_cache(maxsize=1)
@@ -66,11 +71,18 @@ class PredictionPanel(nukescripts.panels.PythonPanel):
         if prediction_widget:
             prediction_widget.update_prediction_page_status(label)
 
-    def update_prediction_state(
-        self, selected_node: str, prediction: Dict[str, List[Tuple[str, float]]]
-    ):
+    def update_prediction_state(self, prediction: Dict[str, Any]):
+        prediction_list = prediction.get("prediction", None)
+        if prediction_list is None:
+            log.error(
+                f"Unable to retrieve valid prediction from response: {prediction}"
+            )
+            return
+
+        start_node = prediction["start_node"]
         prediction_widget = self.prediction_widget.getObject()
+
         if prediction_widget:
-            prediction_widget.update_selected_node(selected_node)
-            prediction_widget.update_prediction(prediction)
+            prediction_widget.update_selected_node(start_node)
+            prediction_widget.update_prediction(prediction_list)
             prediction_widget.update_prediction_page_status("")

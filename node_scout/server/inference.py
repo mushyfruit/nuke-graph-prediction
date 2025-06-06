@@ -37,12 +37,12 @@ class Root(BaseModel):
 
 class PredictionRequest(BaseModel):
     start_node: str
-    script_name: str
     root: Root
 
 
 class PredictionResponse(BaseModel):
     prediction: List[Tuple[str, float]]
+    start_node: str
 
 
 class TrainingRequest(BaseModel):
@@ -91,7 +91,7 @@ async def predict(request: PredictionRequest):
             ensure_valid_vocabulary=True,
         )
         prediction = predictor.predict(pyg_graph_data)
-        return PredictionResponse(prediction=prediction)
+        return PredictionResponse(prediction=prediction, start_node=start_node)
     except Exception as e:
         error_details = {"error": str(e), "traceback": traceback.format_exc()}
         log.error(error_details)

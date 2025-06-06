@@ -371,10 +371,7 @@ class PredictionWidget(QtWidgets.QWidget):
         prediction_layout.addLayout(bottom_status_layout)
 
     def _on_callback_toggle(self, enabled):
-        if enabled:
-            self._prediction_manager.enable_callback()
-        else:
-            self._prediction_manager.disable_callback()
+        self._prediction_manager.toggle_callback(enabled)
 
     def _on_prediction_double_clicked(self, item, column):
         node_type = item.data(0, QtCore.Qt.UserRole)
@@ -414,10 +411,10 @@ class PredictionWidget(QtWidgets.QWidget):
         self._current_node_name = selected_node
         self.selected_node_label.setText("Selected Node: {}".format(selected_node))
 
-    def update_prediction(self, node_prediction: Dict[str, List[Tuple[str, float]]]):
+    def update_prediction(self, node_predictions: List[Tuple[str, float]]):
         """Get predictions from the GAT model for the selected node.
 
-        :param node_prediction: Dictionary containing list of (node_type, confidence_score) tuples.
+        :param node_predictions: List of (node_type, confidence_score) tuples.
 
             {
                 'prediction': [
@@ -429,18 +426,11 @@ class PredictionWidget(QtWidgets.QWidget):
                 ]
             }
         """
-        if not node_prediction:
-            return
-
-        predictions = node_prediction.get("prediction")
-        if predictions is None:
-            log.error(
-                f"Unable to retrieve valid prediction from response: {node_prediction}"
-            )
+        if not node_predictions:
             return
 
         # Update the stored predictions.
-        self._predictions = predictions
+        self._predictions = node_predictions
 
         # Update the prediction tree UI.
         self._update_prediction_tree()
