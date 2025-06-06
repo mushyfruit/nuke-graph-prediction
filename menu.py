@@ -1,3 +1,3 @@
-from nuke_auto_predict_node import nuke_auto_predict_node
+from node_scout import node_scout
 
-nuke_auto_predict_node.on_startup()
+node_scout.on_startup()

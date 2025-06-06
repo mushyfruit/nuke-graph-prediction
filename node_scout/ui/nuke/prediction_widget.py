@@ -5,11 +5,11 @@ import nukescripts
 
 from PySide2 import QtWidgets, QtCore, QtGui
 
-from ..api import RequestHandler, PredictionManager
-from ..core.model.constants import TrainingPhase
-from ..core.model.utilities import check_for_model_on_disk
-from ..server.launcher import get_inference_launcher
-from ..logging_config import get_logger
+from ...api import RequestHandler, PredictionManager
+from ...core.model.constants import TrainingPhase
+from ...core.model.utilities import check_for_model_on_disk
+from ...server.launcher import get_inference_launcher
+from ...logging_config import get_logger
 
 from typing import List, Tuple, Dict
 
@@ -119,7 +119,8 @@ class PredictionWidget(QtWidgets.QWidget):
         self.port = QtWidgets.QLineEdit(self._request_handler.port)
         self.port.setMaximumWidth(40)
 
-        icon_path = os.path.join(os.path.dirname(__file__), "icons", "refresh.png")
+        ui_directory = os.path.dirname(os.path.dirname(__file__))
+        icon_path = os.path.join(ui_directory, "icons", "refresh.png")
         self.restart_btn = QtWidgets.QPushButton()
         self.restart_btn.setIcon(QtGui.QIcon(icon_path))
         self.restart_btn.setFixedSize(24, 24)

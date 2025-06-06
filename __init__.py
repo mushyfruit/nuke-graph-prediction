@@ -1,1 +1,1 @@
-from . import nuke_auto_predict_node
+from . import node_scout

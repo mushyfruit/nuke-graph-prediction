@@ -2,7 +2,7 @@ import nuke
 import nukescripts
 
 from .server.launcher import launch_inference_service
-from .ui import prediction_panel
+from .ui.nuke import prediction_panel
 
 _model_vocabulary = None
 
@@ -28,9 +28,7 @@ def on_startup():
 
 def register_prediction_panel():
     pane_menu = nuke.menu("Pane")
-    pane_menu.addCommand(
-        "Node Recommendation✨", prediction_panel.show_prediction_panel
-    )
+    pane_menu.addCommand("NodeScout", prediction_panel.show_prediction_panel)
     nukescripts.registerPanel(
-        "mushyfruit.node_recommendation", prediction_panel.show_prediction_panel
+        "mushyfruit.node_scout", prediction_panel.show_prediction_panel
     )

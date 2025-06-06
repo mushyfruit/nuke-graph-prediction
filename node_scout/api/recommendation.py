@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 from typing import Dict, Optional
 
@@ -7,7 +8,6 @@ import nuke
 from .request_handler import RequestHandler
 from .utilities import get_all_parameters
 from ..logging_config import get_logger
-from ..ui import prediction_panel
 from ..core.model.utilities import check_for_model_on_disk
 
 log = get_logger(__name__)
@@ -33,12 +33,22 @@ class PredictionManager:
         self._vocabulary: Dict[str, int] = {}
         self._request_handler = RequestHandler()
         self._min_node_requirement = 3
-        self._panel = prediction_panel.get_panel_instance()
+        self._panel = self.get_panel_instance()
 
         self._callback_installed = False
 
         self._model_exists = check_for_model_on_disk()
         self.load_model_vocab()
+
+    def get_panel_instance(self):
+        """Returns a Python panel instance for the target DCC."""
+        exe = os.path.basename(sys.executable).lower()
+        if "nuke" in exe:
+            from ..ui.nuke import prediction_panel
+
+            return prediction_panel.get_panel_instance()
+        else:
+            raise NotImplementedError("TBD Houdini")
 
     def enable_callback(self):
         if not self._callback_installed:

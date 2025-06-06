@@ -8,13 +8,13 @@ test_scripts/
 json_files/
 
 # model checkpoints
-nuke_auto_predict_node/checkpoints/*
-!nuke_auto_predict_node/checkpoints/logs/.gitkeep
+node_scout/checkpoints/*
+!node_scout/checkpoints/logs/.gitkeep
 
 # venv
 venv/
-nuke_auto_predict_node/inference_venv/
-nuke_auto_predict_node/tmp/
+node_scout/inference_venv/
+node_scout/tmp/
 
 # dotenv
 .env

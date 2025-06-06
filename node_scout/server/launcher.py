@@ -101,8 +101,6 @@ class InferenceLauncher:
             self.venv_path, "lib64", python_dir, "site-packages"
         )
 
-        log.error(f"using {python_path}")
-
         paths = [python_path, python_path_64]
 
         torch_location = os.getenv("PYTORCH_INSTALL")
@@ -114,9 +112,6 @@ class InferenceLauncher:
                     paths.append(torch_path)
 
         env["PYTHONPATH"] = ":".join(paths)
-
-        log.error(env["PYTHONPATH"])
-
         return env
 
     def restart_service(self, host=None, port=None):
