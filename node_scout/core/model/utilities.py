@@ -11,9 +11,9 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-def check_for_model_on_disk() -> bool:
+def check_for_model_on_disk(model_name: str) -> bool:
     model_checkpoint_path = os.path.join(
-        DirectoryConfig.MODEL_PATH, f"{MODEL_NAME}_model.pt"
+        DirectoryConfig.MODEL_PATH, f"{model_name}_model.pt"
     )
     return os.path.exists(model_checkpoint_path)
 

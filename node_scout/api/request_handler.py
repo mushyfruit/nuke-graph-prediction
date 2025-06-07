@@ -11,7 +11,7 @@ from ..logging_config import get_logger
 log = get_logger(__name__)
 
 
-class NukeRequestError(Exception):
+class InferenceRequestError(Exception):
     def __init__(
         self,
         message: str,
@@ -72,14 +72,14 @@ class RequestHandler:
                 error_body = e.read().decode("utf-8")
             status_code = getattr(e, "code", None)
 
-            raise NukeRequestError(
+            raise InferenceRequestError(
                 f"Request failed: {str(error_body)}",
                 status_code=status_code,
                 response_body=error_body,
             )
 
         except Exception as e:
-            raise NukeRequestError(f"Unexpected error: {str(e)}")
+            raise InferenceRequestError(f"Unexpected error: {str(e)}")
 
     def post(
         self,

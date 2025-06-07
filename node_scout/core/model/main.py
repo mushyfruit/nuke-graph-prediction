@@ -5,17 +5,17 @@ from dataclasses import dataclass
 from typing import Optional, TYPE_CHECKING
 
 import torch
-from torch_geometric.loader import DataLoader
-import torch.optim as optim
 import torch.amp as amp
+import torch.optim as optim
+from torch_geometric.loader import DataLoader
 
 from .constants import MODEL_NAME, DirectoryConfig, TrainingStatus, TrainingPhase
 from .utilities import save_model_checkpoint, load_model_checkpoint
-from .dataset import NukeGraphDataset
+from .dataset.dataset import GraphDataset
 from .gat import NukeGATPredictor
 
 if TYPE_CHECKING:
-    from .manager import StatusQueue
+    from .queue import StatusQueue
 
 log = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ class TrainingConfig:
 def main():
     config = TrainingConfig()
 
-    dataset = NukeGraphDataset(force_rebuild=True)
+    dataset = GraphDataset(force_rebuild=True)
     dataset.process_all_graphs_in_dir(DirectoryConfig.MODEL_DATA_FOLDER)
 
     log.info(f"Dataset contains {len(dataset)} graphs")
@@ -58,7 +58,7 @@ def main():
     save_model_checkpoint(trained_model, MODEL_NAME)
 
 
-def setup_dataloaders(dataset: NukeGraphDataset, config: TrainingConfig):
+def setup_dataloaders(dataset: GraphDataset, config: TrainingConfig):
     train_size = int(0.8 * len(dataset.examples))
     val_size = len(dataset.examples) - train_size
 
@@ -89,7 +89,7 @@ def setup_dataloaders(dataset: NukeGraphDataset, config: TrainingConfig):
 
 
 def train_model_gat(
-    dataset: NukeGraphDataset,
+    dataset: GraphDataset,
     model: NukeGATPredictor,
     config: Optional[TrainingConfig] = None,
     memory_fraction: Optional[float] = None,
@@ -174,6 +174,10 @@ def train_model_gat(
                 predictions = model(batch)
 
                 # Perform the CrossEntropy loss on predictions vs. ground-truth labels.
+
+                log.info(f"predictions.shape = {predictions.shape}")
+                log.info(f"batch.y.shape = {batch.y.shape}")
+
                 loss = criterion(predictions, batch.y)
 
             # Computes the `.grad` value for each parameter.

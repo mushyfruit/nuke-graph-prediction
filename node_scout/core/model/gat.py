@@ -152,3 +152,24 @@ class NukeGATPredictor(torch.nn.Module):
         logits = self.prediction_head(x)
 
         return logits
+
+    def to_checkpoint(self) -> dict:
+        return {
+            "num_features": self.num_features,
+            "hidden_channels": self.hidden_channels,
+            "num_layers": self.num_layers,
+            "num_heads": self.heads,
+            "dropout": self.dropout,
+            "state_dict": self.state_dict(),
+        }
+
+    @classmethod
+    def from_checkpoint(cls, checkpoint, num_classes):
+        return cls(
+            num_features=checkpoint["num_features"],
+            num_classes=num_classes,
+            hidden_channels=checkpoint["hidden_channels"],
+            num_layers=checkpoint["num_layers"],
+            heads=checkpoint["num_heads"],
+            dropout=checkpoint["dropout"],
+        )

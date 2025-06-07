@@ -41,7 +41,7 @@ class NukeBackend(DCCBackend):
         }
 
         if kwargs.get("include_parameters"):
-            json_node["parameters"] = get_all_parameters(node)
+            json_node["parameters"] = self._get_all_parameters(node)
 
         return json_node
 
@@ -105,3 +105,31 @@ class NukeBackend(DCCBackend):
     @staticmethod
     def _is_group_or_gizmo(node: nuke.Node) -> bool:
         return node.Class() in {"Group", "Gizmo"} or "gizmo_file" in node.knobs()
+
+    def _get_all_parameters(self, node: nuke.Node) -> Dict:
+        blacklist_knobs = {"xpos", "ypos"}
+
+        parameter_dict = {}
+        for knob in node.knobs():
+            if knob in blacklist_knobs:
+                continue
+
+            k = node[knob]
+            knob_value = k.value()
+
+            try:
+                if k.defaultValue() == knob_value:
+                    continue
+            # Not all knobs define a 'defaultValue()'
+            except Exception as e:
+                pass
+
+            if not isinstance(knob_value, (str, float, int)):
+                continue
+
+            if knob_value == "":
+                continue
+
+            parameter_dict[knob] = node[knob].value()
+
+        return parameter_dict

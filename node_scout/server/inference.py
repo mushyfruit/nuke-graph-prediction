@@ -8,15 +8,14 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import traceback
 
-from core.model.dataset import NukeGraphBuilder
-from core.model.manager import NukeNodePredictor
+from core.model.manager import GNNModelController
+from core.model.dataset.deserialize import create_graph_data
 
 from typing import List, Dict, Optional, Tuple
 
 app = FastAPI()
 
-predictor = NukeNodePredictor()
-converter = NukeGraphBuilder(load_from_disk=True)
+predictor = GNNModelController()
 
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -84,9 +83,10 @@ async def predict(request: PredictionRequest):
         log.info(f"Predicting node {request.start_node}")
         nodes = request.root.nodes
         start_node = nodes[request.start_node].model_dump()
-        pyg_graph_data = converter.create_graph_data(
+        pyg_graph_data = create_graph_data(
             request.model_dump(),
             start_node,
+            predictor.get_vocabulary(),
             filter_graphs=False,
             ensure_valid_vocabulary=True,
         )

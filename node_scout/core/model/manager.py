@@ -3,13 +3,16 @@ import queue
 import logging
 import threading
 import traceback
-from typing import Optional, List, Tuple
+from dataclasses import asdict
+from typing import Optional, List, Tuple, Any
 
 import torch
 from torch_geometric.data import Data
 
 from .main import train_model_gat, TrainingConfig
-from .dataset import Vocabulary, NukeGraphDataset
+from .queue import StatusQueue
+from .dataset.vocabulary import Vocabulary
+from .dataset.dataset import GraphDataset
 from .gat import NukeGATPredictor
 from .constants import (
     MODEL_NAME,
@@ -24,58 +27,37 @@ from ..nuke.serialization import NukeGraphSerializer
 log = logging.getLogger(__name__)
 
 
-class StatusQueue(queue.Queue):
-    def __init__(self, maxsize=100):
-        super(StatusQueue, self).__init__(maxsize=maxsize)
-        self._lock = threading.Lock()
-
-    def safe_put(self, status: TrainingStatus) -> bool:
-        with self._lock:
-            try:
-                self.put(status, block=False)
-                return True
-            except queue.Full:
-                try:
-                    self.get_nowait()
-                    self.put(status, block=False)
-                except (queue.Empty, queue.Full):
-                    log.warning("Error: failed to put status to queue!")
-                    return False
-
-    def safe_get(self) -> Optional[TrainingStatus]:
-        try:
-            return self.get_nowait()
-        except queue.Empty:
-            return None
-
-    def get_latest(self) -> Optional[TrainingStatus]:
-        try:
-            return list(self.queue)[-1]
-        except IndexError:
-            return None
-
-
-class NukeNodePredictor:
-    def __init__(self, model_name: str = None):
+class GNNModelController:
+    def __init__(self, model_class, model_config, model_name):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self._model = None
-        self.vocab = None
-        self.model_name = model_name if model_name else MODEL_NAME
+        self._vocab = None
 
+        self._model_class = model_class
+        self._model_config = model_config
+        self._model_name = model_name
+
+        # Thread-safe queue for communicating status updates through endpoint.
         self.status_queue = StatusQueue(maxsize=100)
 
         self.training_thread = None
-
         self._model_lock = threading.RLock()
+
+        # Flag to track model training status.
         self._is_training = threading.Event()
 
+        # Load the model and vocabulary.
         self.load()
 
+    def get_vocabulary(self):
+        return self._vocab
+
     def load(self) -> bool:
+        """Instantiate the target GNN model and populate the model's stored vocabulary."""
         # Retrieve the checkpoint's path.
-        if not check_for_model_on_disk():
-            log.info(f"Model {self.model_name} not found on disk. Skipping load.")
+        if not check_for_model_on_disk(self._model_name):
+            log.info(f"Model {self._model_name} not found on disk. Skipping load.")
             return False
 
         if not os.path.exists(DirectoryConfig.VOCAB_PATH):
@@ -83,22 +65,17 @@ class NukeNodePredictor:
 
         # Load the model checkpoint.
         model_checkpoint_path = os.path.join(
-            DirectoryConfig.MODEL_PATH, f"{MODEL_NAME}_model.pt"
+            DirectoryConfig.MODEL_PATH, f"{self._model_name}_model.pt"
         )
         checkpoint = torch.load(model_checkpoint_path, map_location=self.device)
 
         # Populate the model's stored vocabulary.
-        self.vocab = Vocabulary(DirectoryConfig.VOCAB_PATH)
+        self._vocab = Vocabulary(DirectoryConfig.VOCAB_PATH)
 
         # Instantiate the GAT model.
-        self._model = NukeGATPredictor(
-            num_features=4,
-            num_classes=len(self.vocab),
-            hidden_channels=checkpoint["hidden_channels"],
-            num_layers=checkpoint["num_layers"],
-            heads=checkpoint["num_heads"],
-            dropout=checkpoint["dropout"],
-        ).to(self.device)
+        self._model = self._model_class.from_checkpoint(
+            checkpoint, num_classes=len(self._vocab)
+        )
 
         # Restore the state dictionary.
         self._model.load_state_dict(check_state_dict(checkpoint["state_dict"]))
@@ -108,22 +85,16 @@ class NukeNodePredictor:
 
         return True
 
-    def get_training_model(
-        self, dataset: NukeGraphDataset, fine_tune: bool = False
-    ) -> NukeGATPredictor:
+    def get_training_model(self, dataset: GraphDataset, fine_tune: bool = False) -> Any:
         # TODO: Specify model settings via new python panel page.
-        config = TrainingConfig()
-        training_model = NukeGATPredictor(
-            num_features=4,
-            num_classes=len(dataset.vocab),
-            hidden_channels=config.hidden_channels,
-            num_layers=config.num_layers,
-            heads=config.num_heads,
-            dropout=config.dropout,
+        config = asdict(TrainingConfig())
+
+        training_model = self._model_class(
+            num_features=4, num_classes=len(dataset.vocab), **config
         )
 
         if fine_tune:
-            training_model.load_state_dict(self._model.state_dict())
+            training_model.load_state_dict(check_state_dict(self._model.state_dict()))
 
         return training_model
 
@@ -168,7 +139,12 @@ class NukeNodePredictor:
             )
 
             # Begin the training phase.
-            dataset = NukeGraphDataset(output_dir)
+            log.info("Force rebuild activated...")
+            dataset = GraphDataset(output_dir, force_rebuild=True)
+
+            log.info("processing")
+            dataset.process_all_graphs_in_dir(output_dir)
+
             self.status_queue.safe_put(
                 TrainingStatus(
                     phase=TrainingPhase.TRAINING,
@@ -250,7 +226,7 @@ class NukeNodePredictor:
             node_predictions = []
             for idx, prob in zip(top_indices[0], top_probs[0]):
                 # Convert the idx to Nuke node type name.
-                node_type = self.vocab.get_type(idx.item())
+                node_type = self._vocab.get_type(idx.item())
                 probability = prob.item()
                 node_predictions.append((node_type, probability))
 

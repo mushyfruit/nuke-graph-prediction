@@ -18,7 +18,7 @@ def on_startup():
 
         nuke.menu("Nuke").addCommand(
             "Edit/Node/Auto-Predict",
-            "nuke_auto_predict_node.recommendation.perform_recommendation()",
+            "node_scout.recommendation.perform_recommendation()",
             "ctrl+shift+t",
         )
 
