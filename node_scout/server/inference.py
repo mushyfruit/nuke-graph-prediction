@@ -1,21 +1,18 @@
 import os
 import sys
 import logging
-from fastapi import FastAPI, HTTPException
+import traceback
+from typing import List, Dict, Optional, Tuple
+
+from fastapi import FastAPI, HTTPException, Request, Depends
 from pydantic import BaseModel, field_validator
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-import traceback
-
-from core.model.manager import GNNModelController
+from core.model.manager import GNNPipelineManager
 from core.model.dataset.deserialize import create_graph_data
 
-from typing import List, Dict, Optional, Tuple
-
 app = FastAPI()
-
-predictor = GNNModelController()
 
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -64,20 +61,42 @@ class TrainingRequest(BaseModel):
         return v
 
 
+@app.on_event("startup")
+async def load_pipeline_manager():
+    from core.model.gat import NukeGATPredictor
+    from core.model.main import TrainingConfig
+    from core.model.constants import MODEL_NAME
+
+    app.state.predictor = GNNPipelineManager(
+        model_class=NukeGATPredictor,
+        model_config=TrainingConfig(),
+        model_name=MODEL_NAME,
+    )
+
+
+def get_pipeline_manager(request: Request) -> GNNPipelineManager:
+    return request.app.state.predictor
+
+
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
 
 
 @app.get("/training_status")
-async def get_training_status():
+async def get_training_status(
+    predictor: GNNPipelineManager = Depends(get_pipeline_manager),
+):
     """Get current training status"""
     training_status = predictor.get_training_status()
     return training_status.to_dict()
 
 
 @app.post("/predict", response_model=PredictionResponse)
-async def predict(request: PredictionRequest):
+async def predict(
+    request: PredictionRequest,
+    predictor: GNNPipelineManager = Depends(get_pipeline_manager),
+):
     """Prediction endpoint"""
     try:
         log.info(f"Predicting node {request.start_node}")
@@ -101,12 +120,15 @@ async def predict(request: PredictionRequest):
 
 
 @app.post("/train")
-async def train(request: TrainingRequest):
+async def train(
+    request: TrainingRequest,
+    predictor: GNNPipelineManager = Depends(get_pipeline_manager),
+):
     """Prediction endpoint"""
     try:
         # Parse and serialize the scripts!
         log.info("Received a training request!")
-        result = predictor.start_training_pipeline(
+        result = predictor.train(
             request.file_paths, request.memory_allocation, request.enable_fine_tuning
         )
         return result.to_dict()

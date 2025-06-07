@@ -1,6 +1,7 @@
 __pycache__/
 
 # test and data dir
+.idea/
 test/
 model/data/
 test_outputs/

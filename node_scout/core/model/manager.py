@@ -1,19 +1,17 @@
 import os
-import queue
 import logging
 import threading
 import traceback
-from dataclasses import asdict
+from dataclasses import asdict, is_dataclass
 from typing import Optional, List, Tuple, Any
 
 import torch
 from torch_geometric.data import Data
 
-from .main import train_model_gat, TrainingConfig
+from .main import train_model_gat
 from .queue import StatusQueue
 from .dataset.vocabulary import Vocabulary
 from .dataset.dataset import GraphDataset
-from .gat import NukeGATPredictor
 from .constants import (
     MODEL_NAME,
     DirectoryConfig,
@@ -27,7 +25,7 @@ from ..nuke.serialization import NukeGraphSerializer
 log = logging.getLogger(__name__)
 
 
-class GNNModelController:
+class GNNPipelineManager:
     def __init__(self, model_class, model_config, model_name):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -35,7 +33,9 @@ class GNNModelController:
         self._vocab = None
 
         self._model_class = model_class
-        self._model_config = model_config
+        self._model_config = (
+            asdict(model_config) if is_dataclass(model_config) else model_config
+        )
         self._model_name = model_name
 
         # Thread-safe queue for communicating status updates through endpoint.
@@ -85,20 +85,7 @@ class GNNModelController:
 
         return True
 
-    def get_training_model(self, dataset: GraphDataset, fine_tune: bool = False) -> Any:
-        # TODO: Specify model settings via new python panel page.
-        config = asdict(TrainingConfig())
-
-        training_model = self._model_class(
-            num_features=4, num_classes=len(dataset.vocab), **config
-        )
-
-        if fine_tune:
-            training_model.load_state_dict(check_state_dict(self._model.state_dict()))
-
-        return training_model
-
-    def start_training_pipeline(
+    def train(
         self, file_paths: List[str], memory_allocation: float, enable_fine_tuning: bool
     ) -> TrainingStatus:
         if self._is_training.is_set():
@@ -162,9 +149,14 @@ class GNNModelController:
                 f"fine-tuning: {enable_fine_tuning}"
             )
 
-            training_model = self.get_training_model(
-                dataset, fine_tune=enable_fine_tuning
+            training_model = self._model_class(
+                num_features=4, num_classes=len(dataset.vocab), **self._model_config
             )
+            if enable_fine_tuning:
+                training_model.load_state_dict(
+                    check_state_dict(self._model.state_dict())
+                )
+
             trained_model = train_model_gat(
                 dataset,
                 training_model,
