@@ -11,7 +11,10 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-def check_for_model_on_disk(model_name: str) -> bool:
+def check_for_model_on_disk(model_name: Optional[str] = None) -> bool:
+    if model_name is None:
+        model_name = MODEL_NAME
+
     model_checkpoint_path = os.path.join(
         DirectoryConfig.MODEL_PATH, f"{model_name}_model.pt"
     )

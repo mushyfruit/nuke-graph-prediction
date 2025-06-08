@@ -2,8 +2,7 @@ import os
 import glob
 import nuke
 import nukescripts
-
-from PySide2 import QtWidgets, QtCore, QtGui
+from typing import List, Tuple, Dict
 
 from ...api import RequestHandler, PredictionManager
 from ...core.model.constants import TrainingPhase
@@ -11,7 +10,12 @@ from ...core.model.utilities import check_for_model_on_disk
 from ...server.launcher import get_inference_launcher
 from ...logging_config import get_logger
 
-from typing import List, Tuple, Dict
+
+try:
+    # Nuke 16+
+    from PySide6 import QtWidgets, QtCore, QtGui
+except ImportError:
+    from PySide2 import QtWidgets, QtCore, QtGui
 
 log = get_logger(__name__)
 
@@ -149,7 +153,6 @@ class PredictionWidget(QtWidgets.QWidget):
 
         self.file_list_widget = QtWidgets.QListWidget(self)
         self.file_list_widget.setMinimumHeight(200)
-        self.file_list_widget.setMaximumHeight(450)
         self.file_list_widget.itemDoubleClicked.connect(self._on_dbl_click)
         training_layout.addWidget(self.file_list_widget)
 
@@ -466,7 +469,8 @@ class FileInputWidget(QtWidgets.QWidget):
     def browse_folders(self):
         file_dialog = QtWidgets.QFileDialog(self)
         file_dialog.setOption(QtWidgets.QFileDialog.DontUseNativeDialog, True)
-        file_dialog.setFileMode(QtWidgets.QFileDialog.DirectoryOnly)
+        file_dialog.setFileMode(QtWidgets.QFileDialog.Directory)
+        file_dialog.setOption(QtWidgets.QFileDialog.ShowDirsOnly, True)
         file_dialog.setWindowTitle("Select Folder")
 
         file_dialog.setOption(QtWidgets.QFileDialog.ShowDirsOnly, False)
