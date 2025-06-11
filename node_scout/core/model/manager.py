@@ -40,6 +40,7 @@ class GNNPipelineManager:
 
         # Thread-safe queue for communicating status updates through endpoint.
         self.status_queue = StatusQueue(maxsize=100)
+        self.plot_queue = StatusQueue(maxsize=100)
 
         self.training_thread = None
         self._model_lock = threading.RLock()
@@ -129,7 +130,7 @@ class GNNPipelineManager:
             log.info("Force rebuild activated...")
             dataset = GraphDataset(output_dir, force_rebuild=True)
 
-            log.info("processing")
+            log.info("Processing all graphs in directory...")
             dataset.process_all_graphs_in_dir(output_dir)
 
             self.status_queue.safe_put(
@@ -149,6 +150,8 @@ class GNNPipelineManager:
                 f"fine-tuning: {enable_fine_tuning}"
             )
 
+            log.info(f"Using: {self._model_config}")
+
             training_model = self._model_class(
                 num_features=4, num_classes=len(dataset.vocab), **self._model_config
             )
@@ -157,11 +160,13 @@ class GNNPipelineManager:
                     check_state_dict(self._model.state_dict())
                 )
 
+            log.info("Training the model...")
             trained_model = train_model_gat(
                 dataset,
                 training_model,
                 memory_fraction=memory_allocation,
                 status_queue=self.status_queue,
+                plot_queue=self.plot_queue,
             )
             save_model_checkpoint(trained_model, MODEL_NAME)
 

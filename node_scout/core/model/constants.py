@@ -12,9 +12,13 @@ class DirectoryConfig:
 
     MODEL_PATH = os.path.join(BASE_DIR, "checkpoints")
     MODEL_DATA_FOLDER = os.path.join(BASE_DIR, "tmp", "nuke_graphs")
+    TMP_GRAPH_FOLDER = os.path.join(BASE_DIR, "tmp", "graph_vis")
     DATA_CACHE_PATH = os.path.join(MODEL_PATH, "data_cache")
     VOCAB_PATH = os.path.join(DATA_CACHE_PATH, VOCAB)
     TRAINING_LOG_FILE = os.path.join(MODEL_PATH, "logs", "training.log")
+
+    LOSS_PLOT = os.path.join(TMP_GRAPH_FOLDER, "loss.png")
+    TOPK_PLOT = os.path.join(TMP_GRAPH_FOLDER, "topk.png")
 
 
 class NukeScript:
@@ -42,7 +46,9 @@ class TrainingStatus:
     total_epochs: Optional[int] = None
     training_loss: Optional[float] = None
     training_accuracy: Optional[float] = None
+    validation_loss: Optional[float] = None
     validation_accuracy: Optional[float] = None
+    topk_accuracy: Optional[Dict] = None
 
     def to_dict(self) -> Dict[str, Any]:
         status_dict = {"status": self.phase.value}

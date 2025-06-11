@@ -140,8 +140,6 @@ class GraphDataset(Dataset):
             if graph_data.num_nodes == 0:
                 continue
 
-            log.info(graph_data.num_nodes)
-
             examples.append(graph_data)
 
         return examples

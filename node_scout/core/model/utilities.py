@@ -6,7 +6,7 @@ from typing import Dict, Any, Optional, List, TYPE_CHECKING
 from .constants import DirectoryConfig, MODEL_NAME
 
 if TYPE_CHECKING:
-    from .gat import NukeGATPredictor
+    from .gnn.gat import NukeGATPredictor
 
 log = logging.getLogger(__name__)
 

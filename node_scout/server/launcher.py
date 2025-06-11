@@ -50,7 +50,7 @@ class InferenceLauncher:
         ]
 
         log.debug("Started the inference subprocess...")
-        with open(DirectoryConfig.SERVER_LOG_FILE, "a") as log_file:
+        with open(DirectoryConfig.SERVER_LOG_FILE, "w") as log_file:
             self.process = subprocess.Popen(
                 cmd,
                 env=env,

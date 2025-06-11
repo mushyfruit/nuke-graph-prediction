@@ -5,7 +5,7 @@ import nukescripts
 from typing import List, Tuple, Dict
 
 from ...api import RequestHandler, PredictionManager
-from ...core.model.constants import TrainingPhase
+from ...core.model.constants import TrainingPhase, DirectoryConfig
 from ...core.model.utilities import check_for_model_on_disk
 from ...server.launcher import get_inference_launcher
 from ...logging_config import get_logger
@@ -66,9 +66,11 @@ class PredictionWidget(QtWidgets.QWidget):
 
         self._setup_prediction_page()
         self._setup_training_page()
+        self._setup_model_page()
 
         self.tab_widget.addTab(self.prediction_page, "Inference")
         self.tab_widget.addTab(self.training_page, "Training")
+        self.tab_widget.addTab(self.model_page, "Model")
 
     def _on_folder_selected(self, folder_path):
         self._clear_training_status_label()
@@ -214,6 +216,80 @@ class PredictionWidget(QtWidgets.QWidget):
         self.training_btn.clicked.connect(self._on_training_btn_clicked)
         training_layout.addLayout(bottom_layout)
 
+    def _setup_model_page(self):
+        self.model_page = QtWidgets.QWidget()
+        model_layout = QtWidgets.QVBoxLayout(self.model_page)
+
+        self.model_options_layout = QtWidgets.QHBoxLayout()
+
+        self.model_choice_label = QtWidgets.QLabel("Model Architecture:")
+        self.model_choice = QtWidgets.QComboBox()
+        self.model_choice.addItems(
+            ["Graph Attention Network", "Graph Convolution Network", "GraphSAGE"]
+        )
+
+        self.num_epochs_label = QtWidgets.QLabel("Num Epochs:")
+        self.num_epochs_line_edit = QtWidgets.QLineEdit()
+        self.num_epochs_line_edit.setPlaceholderText("100")
+
+        self.model_options_layout.addWidget(self.model_choice_label)
+        self.model_options_layout.addWidget(self.model_choice)
+        self.model_options_layout.addStretch()
+        self.model_options_layout.addWidget(self.num_epochs_label)
+        self.model_options_layout.addWidget(self.num_epochs_line_edit)
+
+        self.loss_label = QtWidgets.QLabel("Training/Validation Loss:")
+
+        # Model Tweaking
+        self.loss_image_widget = QtWidgets.QLabel()
+        self.loss_image_widget.setScaledContents(True)
+        self.loss_image_widget.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+        )
+
+        self.top_k_label = QtWidgets.QLabel("Top-K Accuracy:")
+
+        self.topk_image_widget = QtWidgets.QLabel()
+        self.topk_image_widget.setScaledContents(True)
+        self.topk_image_widget.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+        )
+
+        self.graph_vis_timer = QtCore.QTimer()
+        self.graph_vis_timer.setInterval(3000)
+        self.graph_vis_timer.timeout.connect(self.update_image)
+        self.graph_vis_image = DirectoryConfig.LOSS_PLOT
+        self.topk_vis_image = DirectoryConfig.TOPK_PLOT
+        self.update_image()
+
+        separator = QtWidgets.QFrame()
+        separator.setFrameShape(QtWidgets.QFrame.HLine)
+        separator.setFrameShadow(QtWidgets.QFrame.Sunken)
+        separator.setLineWidth(1)
+
+        model_layout.addLayout(self.model_options_layout)
+        model_layout.addWidget(separator)
+        model_layout.addWidget(self.loss_label)
+        model_layout.addWidget(self.loss_image_widget)
+
+        model_layout.addWidget(self.top_k_label)
+        model_layout.addWidget(self.topk_image_widget)
+        model_layout.addStretch()
+
+    def update_image(self):
+        if os.path.exists(self.graph_vis_image):
+            self._update_pixmap_for_widget(self.loss_image_widget, self.graph_vis_image)
+
+        if os.path.exists(self.topk_vis_image):
+            self._update_pixmap_for_widget(self.topk_image_widget, self.topk_vis_image)
+
+    def _update_pixmap_for_widget(self, widget, image_path):
+        pixmap = QtGui.QPixmap(image_path)
+        if not pixmap.isNull():
+            widget.setPixmap(pixmap)
+        else:
+            widget.setText("Failed to load image")
+
     def update_server_status(self):
         if self._check_server_health():
             self.status_indicator.setText("●")
@@ -258,6 +334,7 @@ class PredictionWidget(QtWidgets.QWidget):
         if response["status"] == TrainingPhase.SERIALIZING.value:
             self._update_training_status_label(response.get("label", ""))
             self.status_timer.start()
+            self.graph_vis_timer.start()
             self.training_btn.setEnabled(False)
             self.file_input.setEnabled(False)
         else:
@@ -266,6 +343,7 @@ class PredictionWidget(QtWidgets.QWidget):
 
     def _on_model_finish(self):
         self.status_timer.stop()
+        self.graph_vis_timer.stop()
         self.training_btn.setEnabled(True)
         self.file_input.setEnabled(True)
 
@@ -317,6 +395,7 @@ class PredictionWidget(QtWidgets.QWidget):
             log.error(f"Error checking training status: {e}")
             self._update_training_status_label(f"Error checking status: {str(e)}")
             self.status_timer.stop()
+            self.graph_vis_timer.stop()
             self.training_btn.setEnabled(True)
 
     def _setup_prediction_page(self):

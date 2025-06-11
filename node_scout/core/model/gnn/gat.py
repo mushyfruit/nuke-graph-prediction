@@ -52,6 +52,7 @@ class NukeGATPredictor(torch.nn.Module):
         heads=8,
         dropout=0.15,
         beta=0.8,
+        **kwargs,
     ):
         super().__init__()
 

@@ -10,9 +10,11 @@ import torch.optim as optim
 from torch_geometric.loader import DataLoader
 
 from .constants import MODEL_NAME, DirectoryConfig, TrainingStatus, TrainingPhase
+from .visualization import LossPlotterThread
+from .metrics import compute_top_k_accuracy
 from .utilities import save_model_checkpoint, load_model_checkpoint
 from .dataset.dataset import GraphDataset
-from .gat import NukeGATPredictor
+from .gnn.gat import NukeGATPredictor
 
 if TYPE_CHECKING:
     from .queue import StatusQueue
@@ -94,6 +96,7 @@ def train_model_gat(
     config: Optional[TrainingConfig] = None,
     memory_fraction: Optional[float] = None,
     status_queue: Optional["StatusQueue"] = None,
+    plot_queue: Optional["StatusQueue"] = None,
 ):
     if config is None:
         config = TrainingConfig()
@@ -103,6 +106,11 @@ def train_model_gat(
         status_queue.safe_put(
             TrainingStatus(TrainingPhase.TRAINING, label="Compiling model...")
         )
+
+    plotter = None
+    if plot_queue:
+        plotter = LossPlotterThread(plot_queue=plot_queue)
+        plotter.start()
 
     model = torch.compile(model)
 
@@ -160,6 +168,8 @@ def train_model_gat(
         total_loss = 0
         correct = 0
         total = 0
+        topk_accumulator = {1: 0, 3: 0, 5: 0}
+        topk_total = 0
 
         # Loop through each batch.
         for batch in train_loader:
@@ -174,10 +184,6 @@ def train_model_gat(
                 predictions = model(batch)
 
                 # Perform the CrossEntropy loss on predictions vs. ground-truth labels.
-
-                log.info(f"predictions.shape = {predictions.shape}")
-                log.info(f"batch.y.shape = {batch.y.shape}")
-
                 loss = criterion(predictions, batch.y)
 
             # Computes the `.grad` value for each parameter.
@@ -212,8 +218,14 @@ def train_model_gat(
             # Unpack loss scalar tensor to python value.
             total_loss += loss.item()
 
+            result = compute_top_k_accuracy(predictions, batch.y)
+            for k in result:
+                topk_accumulator[k] += result[k] * batch.y.size(0) / 100.0
+            topk_total += batch.y.size(0)
+
             del batch, predictions, loss, predicted
 
+        topk_avg = {k: (v / topk_total) * 100.0 for k, v in topk_accumulator.items()}
         avg_train_loss = total_loss / len(train_loader)
         train_accuracy = 100 * correct / total
 
@@ -255,24 +267,33 @@ def train_model_gat(
         log.info(f"  Val Loss: {avg_val_loss:.4f}, Val Accuracy: {val_accuracy:.2f}%")
         log.info(f"  Learning Rate: {current_lr:.2e}")
 
+        current_epoch = epoch + 1
+        status_update = TrainingStatus(
+            TrainingPhase.TRAINING,
+            current_epoch=current_epoch,
+            total_epochs=config.epochs,
+            training_loss=avg_train_loss,
+            training_accuracy=train_accuracy,
+            validation_loss=avg_val_loss,
+            validation_accuracy=val_accuracy,
+            topk_accuracy=topk_avg,
+            progress=float(current_epoch / config.epochs),
+            label=f"Training Model: {current_epoch}/{config.epochs}",
+        )
+
         if status_queue:
-            current_epoch = epoch + 1
-            status_queue.safe_put(
-                TrainingStatus(
-                    TrainingPhase.TRAINING,
-                    current_epoch=current_epoch,
-                    total_epochs=config.epochs,
-                    training_loss=avg_train_loss,
-                    training_accuracy=train_accuracy,
-                    validation_accuracy=val_accuracy,
-                    progress=float(current_epoch / config.epochs),
-                    label=f"Training Model: {current_epoch}/{config.epochs}",
-                )
-            )
+            status_queue.safe_put(status_update)
+
+        if plot_queue:
+            plot_queue.safe_put(status_update)
 
     training_time = time.time() - start_time
     log.info(f"\nTraining completed in {training_time:.2f} seconds")
     log.info(f"Best validation accuracy: {best_val_accuracy:.2f}%")
+
+    if plotter:
+        plotter.stop()
+        plotter.join()
 
     # Restore best model
     if best_model_state is not None:

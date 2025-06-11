@@ -63,7 +63,7 @@ class TrainingRequest(BaseModel):
 
 @app.on_event("startup")
 async def load_pipeline_manager():
-    from core.model.gat import NukeGATPredictor
+    from core.model.gnn.gat import NukeGATPredictor
     from core.model.main import TrainingConfig
     from core.model.constants import MODEL_NAME
 
