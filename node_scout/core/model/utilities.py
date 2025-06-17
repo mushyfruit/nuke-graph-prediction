@@ -68,47 +68,6 @@ def save_model_checkpoint(model: "NukeGATPredictor", model_name: str):
     log.info(f"Model saved to {DirectoryConfig.MODEL_PATH}")
 
 
-def load_model_checkpoint(model_name: str, device: Optional[str] = "cuda"):
-    import torch
-
-    model_checkpoint_path = os.path.join(
-        DirectoryConfig.MODEL_PATH, f"{model_name}_model.pt"
-    )
-
-    # Load checkpoint
-    checkpoint = torch.load(model_checkpoint_path, map_location=device)
-
-    # Load vocabulary
-    with open(DirectoryConfig.VOCAB_PATH, "r") as f:
-        vocab = json.load(f)
-
-    # Initialize model
-    from gat import NukeGATPredictor
-
-    model = NukeGATPredictor(
-        num_features=4,
-        num_classes=vocab["num_node_types"],
-        hidden_channels=checkpoint["hidden_channels"],
-        num_layers=checkpoint["num_layers"],
-        heads=checkpoint["num_heads"],
-        dropout=checkpoint["dropout"],
-    ).to(device)
-
-    # Load model state
-    model.load_state_dict(check_state_dict(checkpoint["state_dict"]))
-    log.info("Successfully loaded state dictionary.")
-
-    # Load scaler if it was saved
-    scaler = None
-    if "scaler_state" in checkpoint:
-        from torch.amp import GradScaler
-
-        scaler = GradScaler(device)
-        scaler.load_state_dict(checkpoint["scaler_state"])
-
-    return model, scaler, vocab
-
-
 def check_state_dict(state_dict: Dict[str, Any], unwanted_prefixes: List[str] = None):
     if unwanted_prefixes is None:
         unwanted_prefixes = ["_orig_mod.", "module."]

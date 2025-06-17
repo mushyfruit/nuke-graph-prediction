@@ -76,7 +76,7 @@ class GNNPipelineManager:
         # Instantiate the GAT model.
         self._model = self._model_class.from_checkpoint(
             checkpoint, num_classes=len(self._vocab)
-        )
+        ).to(self.device)
 
         # Restore the state dictionary.
         self._model.load_state_dict(check_state_dict(checkpoint["state_dict"]))
@@ -127,11 +127,7 @@ class GNNPipelineManager:
             )
 
             # Begin the training phase.
-            log.info("Force rebuild activated...")
-            dataset = GraphDataset(output_dir, force_rebuild=True)
-
-            log.info("Processing all graphs in directory...")
-            dataset.process_all_graphs_in_dir(output_dir)
+            dataset = GraphDataset(output_dir, force_rebuild=False)
 
             self.status_queue.safe_put(
                 TrainingStatus(
@@ -153,7 +149,9 @@ class GNNPipelineManager:
             log.info(f"Using: {self._model_config}")
 
             training_model = self._model_class(
-                num_features=4, num_classes=len(dataset.vocab), **self._model_config
+                num_features=dataset.num_features,
+                num_classes=len(dataset.vocab),
+                **self._model_config,
             )
             if enable_fine_tuning:
                 training_model.load_state_dict(

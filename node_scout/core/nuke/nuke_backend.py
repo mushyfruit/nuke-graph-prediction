@@ -38,6 +38,8 @@ class NukeBackend(DCCBackend):
             "node_type": node.Class(),
             "inputs": node.inputs(),
             "input_connections": [a.name() for a in ancestors],
+            "xpos": node.xpos(),
+            "ypos": node.ypos(),
         }
 
         if kwargs.get("include_parameters"):

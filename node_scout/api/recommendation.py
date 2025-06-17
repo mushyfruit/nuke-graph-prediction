@@ -144,11 +144,7 @@ class PredictionManager:
         self._panel.update_prediction_state(prediction)
 
     def _serialize_upstream(self, start_node: Any) -> Optional[Dict]:
-        serialized_nodes = self._backend.serialize_upstream_nodes(start_node=start_node)
-        return {
-            "root": {"name": "root", "parent": None, "nodes": serialized_nodes},
-            "start_node": self._backend.get_node_name(start_node),
-        }
+        return self._backend.serialize_upstream_nodes(start_node=start_node)
 
     def _load_model_vocab(self):
         if not self._model_exists:

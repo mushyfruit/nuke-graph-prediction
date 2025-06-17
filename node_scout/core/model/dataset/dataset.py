@@ -19,7 +19,7 @@ log = logging.getLogger(__name__)
 class GraphDataset(Dataset):
     def __init__(
         self,
-        root_dir: Optional[str] = None,
+        root_dir,
         force_rebuild: bool = False,
     ):
         super().__init__(root=root_dir)
@@ -43,6 +43,8 @@ class GraphDataset(Dataset):
 
         if not force_rebuild:
             self._load_cache()
+
+        self.process_all_graphs_in_dir(self.root_dir)
 
     def _load_cache(self) -> None:
         # Check if the files have already been processed.
@@ -148,13 +150,4 @@ class GraphDataset(Dataset):
         return len(self.file_paths)
 
     def get(self, idx: int) -> Data:
-        file_path = self.file_paths[idx]
-        with open(file_path, "r") as f:
-            data = json.load(f)
-
-        graph_data = self.generate_graph_training_examples(data)
-
-        if self.transform is not None:
-            graph_data = self.transform(graph_data)
-
-        return graph_data
+        return self.examples[idx]

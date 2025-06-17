@@ -131,7 +131,7 @@ def normalize_features(
     numerical_indices: Optional[List[int]] = None,
 ) -> List[List[Any]]:
     if numerical_indices is None:
-        numerical_indices = [1, 2]
+        numerical_indices = [1, 2, 4, 5]
 
     features = np.array(raw_features)
     normalized = features.copy()
@@ -153,6 +153,10 @@ def normalize_features(
 def get_node_features(node_data: Dict[str, Any], vocab: Vocabulary) -> List[Any]:
     node_type = node_data["node_type"]
     is_merge = 1 if node_type in {"Merge2", "Merge"} else 0
+
+    xpos = node_data.get("xpos", 0)
+    ypos = node_data.get("ypos", 0)
+
     return [
         # Categorical node information.
         vocab.get_idx(node_type),
@@ -162,4 +166,6 @@ def get_node_features(node_data: Dict[str, Any], vocab: Vocabulary) -> List[Any]
         len(node_data.get("input_connections", [])),
         # Binary node information.
         is_merge,
+        xpos,
+        ypos,
     ]

@@ -99,18 +99,18 @@ async def predict(
 ):
     """Prediction endpoint"""
     try:
-        log.info(f"Predicting node {request.start_node}")
+        start_node_name = request.start_node
+        log.info(f"Predicting node: {start_node_name}")
         nodes = request.root.nodes
-        start_node = nodes[request.start_node].model_dump()
+        start_node = nodes[start_node_name].model_dump()
         pyg_graph_data = create_graph_data(
             request.model_dump(),
             start_node,
             predictor.get_vocabulary(),
             filter_graphs=False,
-            ensure_valid_vocabulary=True,
         )
         prediction = predictor.predict(pyg_graph_data)
-        return PredictionResponse(prediction=prediction, start_node=start_node)
+        return PredictionResponse(prediction=prediction, start_node=start_node_name)
     except Exception as e:
         error_details = {"error": str(e), "traceback": traceback.format_exc()}
         log.error(error_details)

@@ -19,13 +19,21 @@ class NukeGraphSerializer:
         os.makedirs(self.output_dir, exist_ok=True)
 
     def _serialize_node(self, node: NukeNode, node_id: str):
-        node_dict = {
-            "name": node.name,
-            "node_id": node_id,
-            "node_type": node.node_type,
-            "inputs": node.inputs,
-            "input_connections": node.input_connections or [],
-        }
+        try:
+            node_dict = {
+                "name": node.name,
+                "node_id": node_id,
+                "node_type": node.node_type,
+                "inputs": node.inputs,
+                "input_connections": node.input_connections or [],
+                "xpos": int(float(node.parameters.get("xpos", 0))),
+                "ypos": int(float(node.parameters.get("ypos", 0))),
+            }
+        except Exception as e:
+            log.info(node.parameters)
+            log.info(node)
+            log.error(e)
+            raise
 
         if self.include_params:
             node_dict["parameters"] = node.parameters

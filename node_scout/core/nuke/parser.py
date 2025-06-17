@@ -100,8 +100,8 @@ class NukeScript:
 class NukeScriptParser:
     GROUP_TYPES = {"LiveGroup", "Group"}
 
-    # Don't let position influence GNN.
-    IGNORE_PARAMS = {"xpos", "ypos"}
+    # Skip callback knobs
+    IGNORE_PARAMS = {"addUserKnob", "onCreate", "knobChanged"}
 
     def __init__(self, skip_dots=True):
         self.skip_dots = skip_dots

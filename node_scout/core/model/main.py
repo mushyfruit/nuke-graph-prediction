@@ -3,16 +3,18 @@ import time
 import logging
 from dataclasses import dataclass
 from typing import Optional, TYPE_CHECKING
+from collections import Counter
 
 import torch
 import torch.amp as amp
 import torch.optim as optim
 from torch_geometric.loader import DataLoader
+from sklearn.model_selection import StratifiedShuffleSplit
 
 from .constants import MODEL_NAME, DirectoryConfig, TrainingStatus, TrainingPhase
 from .visualization import LossPlotterThread
 from .metrics import compute_top_k_accuracy
-from .utilities import save_model_checkpoint, load_model_checkpoint
+from .utilities import save_model_checkpoint
 from .dataset.dataset import GraphDataset
 from .gnn.gat import NukeGATPredictor
 
@@ -24,32 +26,31 @@ log = logging.getLogger(__name__)
 
 @dataclass
 class TrainingConfig:
-    epochs: int = 100
+    epochs: int = 150
     batch_size: int = 64
     learning_rate: float = 0.003
-    weight_decay: float = 0.05
+    weight_decay: float = 0.01
     gradient_clip: float = 1.5
-    label_smoothing: float = 0.1
+    label_smoothing: float = 0.05
     num_workers: int = 4
 
     # Model Parameters
     num_heads: int = 8
     num_layers: int = 4
-    hidden_channels: int = 256
-    dropout: float = 0.2
+    hidden_channels: int = 128
+    dropout: float = 0.3
 
 
 def main():
     config = TrainingConfig()
 
-    dataset = GraphDataset(force_rebuild=True)
-    dataset.process_all_graphs_in_dir(DirectoryConfig.MODEL_DATA_FOLDER)
+    dataset = GraphDataset(DirectoryConfig.MODEL_DATA_FOLDER, force_rebuild=True)
 
     log.info(f"Dataset contains {len(dataset)} graphs")
     log.info(f"Number of node types: {len(dataset.vocab)}")
 
     model = NukeGATPredictor(
-        num_features=4,
+        num_features=dataset.num_features,
         num_classes=len(dataset.vocab),
         hidden_channels=config.hidden_channels,
         dropout=config.dropout,
@@ -61,12 +62,18 @@ def main():
 
 
 def setup_dataloaders(dataset: GraphDataset, config: TrainingConfig):
-    train_size = int(0.8 * len(dataset.examples))
-    val_size = len(dataset.examples) - train_size
+    label_counts = Counter([g.y.item() for g in dataset.examples])
+    valid_labels = {label for label, count in label_counts.items() if count >= 2}
 
-    train_dataset, val_dataset = torch.utils.data.random_split(
-        dataset.examples, [train_size, val_size]
-    )
+    filtered_examples = [g for g in dataset.examples if g.y.item() in valid_labels]
+    labels = [g.y.item() for g in filtered_examples]
+
+    # Ensure an equal representation of node classes in test/validation splits.
+    splitter = StratifiedShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
+    train_idx, val_idx = next(splitter.split(filtered_examples, labels))
+
+    train_dataset = [dataset.examples[i] for i in train_idx]
+    val_dataset = [dataset.examples[i] for i in val_idx]
 
     train_loader = DataLoader(
         train_dataset,
@@ -300,12 +307,6 @@ def train_model_gat(
         model.load_state_dict(best_model_state)
 
     return model
-
-
-def load_for_inference(device: Optional[str] = "cuda"):
-    model, _, vocab = load_model_checkpoint(MODEL_NAME, device)
-    model.eval()
-    return model, vocab
 
 
 if __name__ == "__main__":
