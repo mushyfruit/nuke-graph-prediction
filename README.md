@@ -9,11 +9,11 @@ Includes a full framework for training Graph Attention Networks (GATs) specifica
 - **End-to-End Training & Inference**: Supports model training and predictions via a custom panel within Nuke.
 
 ### Getting Started
-1. **Copy the contents of `init.py` and `menu.py`:**
+1. **Copy the contents of `init.py` and `menu.py` into your Nuke plugin path:**
     ```python
     # menu.py
-    from node_scout import nuke_auto_predict_node
-    nuke_auto_predict_node.on_startup()
+    import node_scout
+    node_scout.on_startup()
     ```
 2. **Generate virtual environment for inference:**
     - When launching the plugin for the first time, `bin/create-venv.sh` will be executed.

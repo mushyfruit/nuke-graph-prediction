@@ -2,8 +2,6 @@ import os
 import json
 from typing import Dict, Optional, Any
 
-import nuke
-
 from .request_handler import RequestHandler
 
 from .. import model_cnst

@@ -13,9 +13,9 @@ if [ -z "$PYTHON_BIN" ]; then
 fi
 
 # Create and activate venv
-VENV_DIR=$(realpath inference_venv)
+VENV_DIR=$($PYTHON_BIN -c 'import os; print(os.path.realpath("inference_venv"))')
 $PYTHON_BIN -m venv "$VENV_DIR"
-source inference_venv/bin/activate
+source "$VENV_DIR/bin/activate"
 
 # Get an absolute path to the inference requirements.
 SCRIPT_DIR="$(dirname "${BASH_SOURCE[0]}")"
@@ -30,13 +30,22 @@ VENV_PYTHON="$VENV_DIR/bin/python3"
 $VENV_PYTHON -m pip install --upgrade pip
 $VENV_PYTHON -m pip install -r "$REQ_FILE"
 
-# Check if PYTORCH_PATH is defined; if not, install torch
-if [ -z "${PYTORCH_PATH:-}" ]; then
-  echo "PYTORCH_PATH not set — installing PyTorch..."
-  $VENV_PYTHON -m pip install torch --index-url https://download.pytorch.org/whl/cu121
+# If you have a custom torch install you want to expose, set PYTORCH_INSTALL.
+# Otherwise we'll install torch into the venv.
+if [ -z "${PYTORCH_INSTALL:-}" ]; then
+  echo "PYTORCH_INSTALL not set — installing PyTorch into the inference venv..."
+
+  # Optional override (e.g. CUDA wheels):
+  #   export TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121
+  if [ -n "${TORCH_INDEX_URL:-}" ]; then
+    $VENV_PYTHON -m pip install torch --index-url "$TORCH_INDEX_URL"
+  else
+    $VENV_PYTHON -m pip install torch
+  fi
+
   $VENV_PYTHON -m pip install torch-geometric
 else
-  echo "PYTORCH_PATH is set — skipping torch installation."
+  echo "PYTORCH_INSTALL is set — skipping torch installation (will be added via PYTHONPATH)."
 fi
 
 # Deactivate at the end
