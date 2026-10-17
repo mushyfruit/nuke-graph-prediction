@@ -19,14 +19,6 @@ def get_inference_launcher():
     return _inference_launcher
 
 
-def create_launcher_venv():
-    nuke_python_parent_dir = os.path.dirname(sys.executable)
-    subprocess.run(
-        [DirectoryConfig.VENV_SETUP_SCRIPT, nuke_python_parent_dir],
-        cwd=DirectoryConfig.BASE_DIR,
-    )
-
-
 class InferenceLauncher:
     def __init__(self, venv_path=None):
         self.venv_path = venv_path if venv_path else DirectoryConfig.VENV_DIR
@@ -34,9 +26,10 @@ class InferenceLauncher:
         self.process = None
 
         atexit.register(self.stop_service)
-        self.setup_signal_handlers()
 
     def start_service(self, host=None, port=None):
+        if self.process is not None and self.process.poll() is None:
+            return True
         env = self.get_subprocess_env()
 
         port = port or os.environ.get("AUTO_PREDICT_PORT", "8080")
@@ -48,70 +41,62 @@ class InferenceLauncher:
             str(host),
             str(port),
         ]
+        if not os.path.isfile(os.path.join(self.venv_path, ".nodescout-ready")):
+            cmd = [
+                DirectoryConfig.VENV_SETUP_SCRIPT,
+                env["LD_LIBRARY_PATH"],
+                self.venv_path,
+                *cmd,
+            ]
+        # prctl(PR_SET_PDEATHSIG, SIGKILL): kill the server even if Nuke skips atexit.
+        cmd = [
+            os.path.join(env["LD_LIBRARY_PATH"], "python3.11"),
+            "-c",
+            "import ctypes, os, sys; ctypes.CDLL(None).prctl(1, 9); "
+            "os.execv(sys.argv[1], sys.argv[1:])",
+            *cmd,
+        ]
 
-        log.debug("Started the inference subprocess...")
+        log.info(
+            "Starting inference service; setup and server output: %s",
+            DirectoryConfig.SERVER_LOG_FILE,
+        )
         with open(DirectoryConfig.SERVER_LOG_FILE, "w") as log_file:
             self.process = subprocess.Popen(
                 cmd,
                 env=env,
                 stdout=log_file,
                 stderr=log_file,
-                # Thread-safe alternative to preexec_fn=os.setsid
                 start_new_session=True,
             )
 
         return True
 
-    def setup_signal_handlers(self):
-        for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGQUIT):
-            signal.signal(sig, self.handle_shutdown)
-
-    def handle_shutdown(self, signum, frame):
-        if signum == signal.SIGQUIT:
-            os.killpg(self.process.pid, signal.SIGTERM)
-        else:
-            # For other signals, try graceful shutdown first
-            self.stop_service()
-
     def stop_service(self):
-        log.info("Terminated the inference subprocess...")
         if self.process is not None:
-            self.process.terminate()
             try:
+                os.killpg(self.process.pid, signal.SIGTERM)
                 self.process.wait(timeout=2)
+            except ProcessLookupError:
+                pass
             except subprocess.TimeoutExpired:
                 log.warning("Force-killing inference subprocess.")
-                self.process.kill()
+                os.killpg(self.process.pid, signal.SIGKILL)
+                self.process.wait()
 
             self.process = None
 
     def get_subprocess_env(self):
         env = os.environ.copy()
-
-        result = subprocess.run(
-            [f"{self.venv_path}/bin/python3", "-V"], capture_output=True, text=True
+        for name in ("PYTHONPATH", "PYTHONHOME", "PYTORCH_INSTALL"):
+            env.pop(name, None)
+        interpreter = (
+            self.python_path if os.path.exists(self.python_path) else sys.executable
         )
-
-        version = result.stdout.strip().split()[1]
-        major, minor, _ = version.split(".")
-        python_dir = f"python{major}.{minor}"
-
-        python_path = os.path.join(self.venv_path, "lib", python_dir, "site-packages")
-        python_path_64 = os.path.join(
-            self.venv_path, "lib64", python_dir, "site-packages"
-        )
-
-        paths = [python_path, python_path_64]
-
-        torch_location = os.getenv("PYTORCH_INSTALL")
-        if torch_location:
-            target = "lib64" if "lib64" in torch_location else "lib"
-            for lib_dir in ["lib", "lib64"]:
-                torch_path = torch_location.replace(target, lib_dir)
-                if os.path.exists(torch_path):
-                    paths.append(torch_path)
-
-        env["PYTHONPATH"] = ":".join(paths)
+        env["LD_LIBRARY_PATH"] = os.path.dirname(os.path.realpath(interpreter))
+        env["PYTHONNOUSERSITE"] = "1"
+        env["TORCH_USE_RTLD_GLOBAL"] = "1"
+        env["TORCH_COMPILE_DISABLE"] = "1"
         return env
 
     def restart_service(self, host=None, port=None):
@@ -120,9 +105,4 @@ class InferenceLauncher:
 
 
 def launch_inference_service():
-    # Ensure the inference service's virtual env exists.
-    if not os.path.exists(DirectoryConfig.VENV_DIR):
-        create_launcher_venv()
-
-    launcher = get_inference_launcher()
-    launcher.start_service()
+    get_inference_launcher().start_service()
