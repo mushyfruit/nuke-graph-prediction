@@ -41,12 +41,8 @@ def create_prediction_widget_instance():
     from ...api.request_handler import RequestHandler
     from ...api.recommendation import get_prediction_manager
 
-    try:
-        manager = get_prediction_manager()
-        handler = RequestHandler()
-        return PredictionWidget(handler, manager)
-    except Exception as e:
-        raise RuntimeError(f"Failed to create prediction widget: {e}")
+    manager = get_prediction_manager()
+    return PredictionWidget(RequestHandler(), manager)
 
 
 class PredictionPanel(nukescripts.panels.PythonPanel):
