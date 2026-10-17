@@ -10,8 +10,8 @@ Requires **Nuke 17.0v3, Linux x86-64, Python 3.11**, internet access for initial
    export NUKE_PATH="/path/to/nuke-graph-prediction${NUKE_PATH:+:$NUKE_PATH}"
    ```
 
-2. Launch Nuke normally. `menu.py` starts setup in the background on first use. Follow `node_scout/checkpoints/logs/server.log` until setup finishes and the server starts.
-3. Open **Pane > NodeScout**. In **Training**, choose your scripts and train a model. In **Prediction**, select a node and press **Ctrl + Shift + T**, or enable **Predict on Selection**. Double-click a recommendation to create it.
+2. Launch Nuke normally. `menu.py` starts setup in the background on first launch. Follow `node_scout/checkpoints/logs/server.log` until setup finishes and the server starts.
+3. Open **Pane > NodeScout**. In **Training**, choose your scripts and train a model. In **Inference**, select a node and press **Ctrl + Shift + T**, or enable **Predict on Selection**. Double-click a recommendation to create it.
 
 Plugin logs: `node_scout/checkpoints/logs/auto-predict.log`. The server stops when Nuke exits. Set a distinct `AUTO_PREDICT_PORT` before launching each simultaneous Nuke instance (default `8080`).
 

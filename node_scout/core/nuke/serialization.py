@@ -5,16 +5,14 @@ from .parser import NukeNode
 
 
 class NukeGraphSerializer:
-    def __init__(self, output_dir=None, include_params=False, remove_passthrough_nodes=True):
+    def __init__(self, output_dir=None):
         self.output_dir = output_dir
-        self.include_params = include_params
-        self.remove_passthrough_nodes = remove_passthrough_nodes
 
         if self.output_dir is not None:
             os.makedirs(self.output_dir, exist_ok=True)
 
     def _serialize_node(self, node: NukeNode, node_id: str):
-        node_dict = {
+        return {
             "name": node.name,
             "node_id": node_id,
             "node_type": node.node_type,
@@ -23,11 +21,6 @@ class NukeGraphSerializer:
             "xpos": int(float(node.parameters.get("xpos", 0))),
             "ypos": int(float(node.parameters.get("ypos", 0))),
         }
-
-        if self.include_params:
-            node_dict["parameters"] = node.parameters
-
-        return node_dict
 
     def _serialize_group(self, group):
         child_nodes = {}
@@ -54,12 +47,11 @@ class NukeGraphSerializer:
 
             self._flatten_child_group(graph_data, group)
 
-        if self.remove_passthrough_nodes:
-            replacements = self._remove_passthrough_nodes(graph_data["root"]["nodes"])
-            if start_node is not None:
-                graph_data["start_node"] = replacements.get(
-                    graph_data["start_node"], graph_data["start_node"]
-                )
+        replacements = self._remove_passthrough_nodes(graph_data["root"]["nodes"])
+        if start_node is not None:
+            graph_data["start_node"] = replacements.get(
+                graph_data["start_node"], graph_data["start_node"]
+            )
 
         if self.output_dir is not None:
             output_path = os.path.join(self.output_dir, "{0}.json".format(script_name))

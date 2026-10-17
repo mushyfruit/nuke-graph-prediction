@@ -67,10 +67,10 @@ def setup_dataloaders(dataset: GraphDataset, config: TrainingConfig):
 def train_model_gat(
     dataset: GraphDataset,
     model: NukeGATPredictor,
+    memory_fraction: float,
+    status_queue: "StatusQueue",
+    plot_queue: "StatusQueue",
     config: Optional[TrainingConfig] = None,
-    memory_fraction: Optional[float] = None,
-    status_queue: Optional["StatusQueue"] = None,
-    plot_queue: Optional["StatusQueue"] = None,
 ):
     if config is None:
         config = TrainingConfig()
@@ -79,7 +79,7 @@ def train_model_gat(
     device = torch.device(device_type)
     model = model.to(device)
 
-    if memory_fraction is not None and torch.cuda.is_available():
+    if torch.cuda.is_available():
         torch.cuda.set_per_process_memory_fraction(memory_fraction)
 
     log.info("Using {} device".format(device))
@@ -111,9 +111,8 @@ def train_model_gat(
     best_model_state = None
     start_time = time.time()
 
-    plotter = LossPlotterThread(plot_queue) if plot_queue is not None else None
-    if plotter:
-        plotter.start()
+    plotter = LossPlotterThread(plot_queue)
+    plotter.start()
 
     try:
         for epoch in range(config.epochs):
@@ -205,11 +204,8 @@ def train_model_gat(
                 label=f"Training Model: {current_epoch}/{config.epochs}",
             )
 
-            if status_queue:
-                status_queue.safe_put(status_update)
-
-            if plot_queue:
-                plot_queue.safe_put(status_update)
+            status_queue.safe_put(status_update)
+            plot_queue.safe_put(status_update)
 
         training_time = time.time() - start_time
         log.info(f"\nTraining completed in {training_time:.2f} seconds")
@@ -220,6 +216,5 @@ def train_model_gat(
 
         return model
     finally:
-        if plotter:
-            plotter.stop()
-            plotter.join()
+        plotter.stop()
+        plotter.join()

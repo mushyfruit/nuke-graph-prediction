@@ -11,7 +11,6 @@ from pydantic import BaseModel, field_validator
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from core.model.manager import GNNPipelineManager
-from core.model.dataset.deserialize import create_graph_data
 
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -106,16 +105,7 @@ def predict(
     try:
         start_node_name = request.start_node
         log.info(f"Predicting node: {start_node_name}")
-        nodes = request.root.nodes
-        start_node = nodes[start_node_name].model_dump()
-        pyg_graph_data = create_graph_data(
-            request.model_dump(),
-            start_node,
-            predictor.get_vocabulary(),
-            filter_graphs=False,
-            include_start_node=True,
-        )
-        prediction = predictor.predict(pyg_graph_data)
+        prediction = predictor.predict(request.model_dump())
         return PredictionResponse(prediction=prediction, start_node=start_node_name)
     except Exception as e:
         error_details = {"error": str(e), "traceback": traceback.format_exc()}

@@ -1,21 +1,22 @@
 import os
 import logging
 import threading
-from typing import Optional, List, Tuple
+import shutil
+from typing import List, Tuple
 
 import torch
-from torch_geometric.data import Data
 
 from .main import train_model_gat
 from .queue import StatusQueue
 from .dataset.vocabulary import Vocabulary
+from .dataset.deserialize import create_graph_data
 from .dataset.dataset import GraphDataset
 from .constants import (
     DirectoryConfig,
     TrainingPhase,
     TrainingStatus,
 )
-from .utilities import check_state_dict, save_model_checkpoint, check_for_model_on_disk
+from .utilities import save_model_checkpoint, check_for_model_on_disk
 from ..nuke.parser import NukeScriptParser
 from ..nuke.serialization import NukeGraphSerializer
 
@@ -36,7 +37,6 @@ class GNNPipelineManager:
         self.status_queue = StatusQueue(maxsize=100)
         self.plot_queue = StatusQueue(maxsize=100)
 
-        self.training_thread = None
         self._model_lock = threading.RLock()
 
         self._is_training = threading.Event()
@@ -55,11 +55,16 @@ class GNNPipelineManager:
             DirectoryConfig.MODEL_PATH, f"{self._model_name}_model.pt"
         )
         try:
-            if not os.path.exists(DirectoryConfig.VOCAB_PATH):
-                raise FileNotFoundError(f"Vocab {DirectoryConfig.VOCAB_PATH} not found")
             checkpoint = torch.load(model_checkpoint_path, map_location=self.device)
-            state_dict = check_state_dict(checkpoint["state_dict"])
-            vocab = Vocabulary(DirectoryConfig.VOCAB_PATH)
+            state_dict = checkpoint["state_dict"]
+            if "vocabulary" in checkpoint:
+                vocab = Vocabulary()
+                for node_type in checkpoint["vocabulary"]:
+                    vocab.add(node_type)
+            else:
+                vocab = Vocabulary(DirectoryConfig.VOCAB_PATH)
+            if len(vocab) != state_dict["prediction_head.8.bias"].numel():
+                raise ValueError("Checkpoint and vocabulary disagree; retrain the model")
             model = self._model_class.from_checkpoint(
                 checkpoint, num_classes=state_dict["prediction_head.8.bias"].numel()
             ).to(self.device)
@@ -89,11 +94,11 @@ class GNNPipelineManager:
         self._is_training.set()
 
         log.info("Starting the training thread...")
-        self.training_thread = threading.Thread(
+        training_thread = threading.Thread(
             target=self._training_thread_target,
             args=(file_paths, memory_allocation, enable_fine_tuning),
         )
-        self.training_thread.start()
+        training_thread.start()
 
         return TrainingStatus(
             phase=TrainingPhase.SERIALIZING, label="Pipeline started successfully..."
@@ -112,7 +117,7 @@ class GNNPipelineManager:
                 )
             )
 
-            dataset = GraphDataset(output_dir, force_rebuild=False)
+            dataset = GraphDataset(output_dir)
 
             self.status_queue.safe_put(
                 TrainingStatus(
@@ -161,10 +166,9 @@ class GNNPipelineManager:
                 status_queue=self.status_queue,
                 plot_queue=self.plot_queue,
             )
-            save_model_checkpoint(trained_model, self._model_name)
+            save_model_checkpoint(trained_model, self._model_name, dataset.vocab)
 
-            # Swap in the trained model.
-            # Allow for inference with old model during training.
+            # Keep the old model available until training finishes.
             with self._model_lock:
                 self._model = trained_model
                 self._vocab = dataset.vocab
@@ -195,10 +199,14 @@ class GNNPipelineManager:
 
         return self.status_queue.get_latest()
 
-    def predict(self, pyg_graph_data: Data) -> List[Tuple[str, float]]:
-        test_data = pyg_graph_data.to(self.device)
-
+    def predict(self, graph_data: dict) -> List[Tuple[str, float]]:
         with self._model_lock, torch.no_grad():
+            test_data = create_graph_data(
+                graph_data,
+                graph_data["root"]["nodes"][graph_data["start_node"]],
+                self._vocab,
+                include_start_node=True,
+            ).to(self.device)
             predictions = self._model(test_data)
             probabilities = torch.nn.functional.softmax(predictions, dim=1)
             top_probs, top_indices = torch.topk(
@@ -213,13 +221,10 @@ class GNNPipelineManager:
 
             return node_predictions
 
-    def parse_and_serialize_scripts(
-        self, script_paths: List[str], output_dir: Optional[str] = None
-    ) -> str:
-        if output_dir is None:
-            output_dir = DirectoryConfig.MODEL_DATA_FOLDER
-
-        os.makedirs(output_dir, exist_ok=True)
+    def parse_and_serialize_scripts(self, script_paths: List[str]) -> str:
+        output_dir = DirectoryConfig.MODEL_DATA_FOLDER
+        if os.path.exists(output_dir):
+            shutil.rmtree(output_dir)
 
         parser = NukeScriptParser()
         serializer = NukeGraphSerializer(output_dir)
@@ -245,4 +250,6 @@ class GNNPipelineManager:
                 )
             )
 
+        if not os.listdir(output_dir):
+            raise ValueError("None of the selected scripts produced a training graph")
         return output_dir

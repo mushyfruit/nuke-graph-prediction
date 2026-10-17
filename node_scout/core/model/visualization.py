@@ -64,20 +64,16 @@ class LossPlotterThread(threading.Thread):
                             self.topk_history[k].append(status.topk_accuracy[k])
 
             if updated and self.train_loss:
-                self.plot_losses()
+                self._plot_loss_graph()
+                if any(self.topk_history.values()):
+                    self._plot_topk_accuracy_history()
 
             self._stop_event.wait(0.1)
 
-    def plot_losses(self):
-        self._plot_loss_graph()
-
-        if any(len(v) > 0 for v in self.topk_history.values()):
-            self._plot_topk_accuracy_history(self.topk_history)
-
-    def _plot_topk_accuracy_history(self, topk_history):
+    def _plot_topk_accuracy_history(self):
         plt.figure(figsize=(4, 2))
 
-        for k, acc_list in topk_history.items():
+        for k, acc_list in self.topk_history.items():
             plt.plot(acc_list, label=f"Top-{k}")
 
         plt.title("Top-k Accuracy Over Epochs")

@@ -13,27 +13,11 @@ def create_graph_data(
     start_node_data: Dict[str, any],
     vocabulary: Vocabulary,
     update_vocab: bool = False,
-    min_upstream_nodes: int = 5,
+    min_upstream_nodes: int = 0,
     max_upstream_nodes: int = 50,
-    filter_graphs: bool = True,
     include_start_node: bool = False,
 ) -> Optional[Data]:
-    """Creates a PyG graph from serialized JSON Nuke graph data.
-
-    :param serialized_graph: Dictionary containing the entire graph structure.
-    :param start_node_data: Dictionary containing the start node's data.
-    :param vocabulary: Vocabulary instance.
-    :param update_vocab: Whether to update the vocabulary.
-    :param min_upstream_nodes: Minimum number of nodes required for a
-        valid graph example.
-    :param max_upstream_nodes: Maximum number of upstream nodes stored
-        for a given graph example.
-    :param filter_graphs: Whether to filter out invalid graphs.
-    :param include_start_node: Whether to include the start node in the
-        upstream traversal. Used for model inference only.
-    :returns: A PyTorch Geometric Data object containing the processed graph
-    :rtype: Data or None.
-    """
+    """Build context; exclude the training target, include the inference selection."""
     nodes = serialized_graph.get("root", {}).get("nodes", {})
     if not nodes:
         raise RuntimeError("No nodes found in serialized graph!")
@@ -45,7 +29,7 @@ def create_graph_data(
         include_start=include_start_node,
     )
 
-    if filter_graphs and len(upstreams) < min_upstream_nodes:
+    if len(upstreams) < min_upstream_nodes:
         return None
 
     raw_features = []
@@ -78,8 +62,8 @@ def create_graph_data(
 def get_upstream_nodes(
     all_nodes_dict: Dict[str, Any],
     start_node_dict: Dict[str, Any],
-    max_context: Optional[int] = 1000,
-    include_start: bool = False,
+    max_context: int,
+    include_start: bool,
 ) -> List[Dict[str, Any]]:
     queue = deque([start_node_dict])
     upstream_nodes = [start_node_dict] if include_start else []
@@ -92,13 +76,7 @@ def get_upstream_nodes(
             upstream_nodes.append(node_dict)
 
         for upstream_name in node_dict.get("input_connections", []):
-            if upstream_name is None:
-                continue
-
-            if upstream_name in visited:
-                continue
-
-            if upstream_name not in all_nodes_dict:
+            if upstream_name in visited or upstream_name not in all_nodes_dict:
                 continue
 
             upstream_dict = all_nodes_dict[upstream_name]
@@ -108,12 +86,8 @@ def get_upstream_nodes(
     return upstream_nodes
 
 
-def normalize_features(
-    raw_features: List[List[Any]],
-    numerical_indices: Optional[List[int]] = None,
-) -> torch.Tensor:
-    if numerical_indices is None:
-        numerical_indices = [1, 2, 4, 5]
+def normalize_features(raw_features: List[List[Any]]) -> torch.Tensor:
+    numerical_indices = [1, 2, 4, 5]
 
     features = torch.tensor(raw_features, dtype=torch.float32)
     if len(features) > 1:

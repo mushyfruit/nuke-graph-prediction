@@ -12,11 +12,9 @@ class InitialResidualGATLayer(torch.nn.Module):
         self,
         in_channels,
         out_channels,
-        hidden_channels,
-        heads=8,
-        dropout=0.2,
-        beta=0.8,
-        beta_trainable=True,
+        heads,
+        dropout,
+        beta,
     ):
         super().__init__()
 
@@ -24,12 +22,9 @@ class InitialResidualGATLayer(torch.nn.Module):
             in_channels, out_channels, heads=heads, dropout=dropout, add_self_loops=True
         )
 
-        self.residual_transform = Linear(hidden_channels, out_channels * heads)
+        self.residual_transform = Linear(out_channels, out_channels * heads)
 
-        if beta_trainable:
-            self.beta = torch.nn.Parameter(torch.tensor(beta))
-        else:
-            self.register_buffer("beta", torch.tensor(beta))
+        self.beta = torch.nn.Parameter(torch.tensor(beta))
 
         self.norm = LayerNorm(out_channels * heads)
 
@@ -52,7 +47,6 @@ class NukeGATPredictor(torch.nn.Module):
         heads=8,
         dropout=0.15,
         beta=0.8,
-        **kwargs,
     ):
         super().__init__()
 
@@ -62,7 +56,6 @@ class NukeGATPredictor(torch.nn.Module):
         self.dropout = dropout
         self.num_features = num_features
         self.num_classes = num_classes
-        self.beta = beta
 
         # Type id column -> 8-dim embedding; the extra zero row is for unknown types.
         self.node_embedding = torch.nn.Embedding(
@@ -83,7 +76,6 @@ class NukeGATPredictor(torch.nn.Module):
             [
                 InitialResidualGATLayer(
                     hidden_channels if i == 0 else hidden_channels * heads,
-                    hidden_channels,
                     hidden_channels,
                     heads=heads,
                     dropout=dropout,
@@ -117,7 +109,8 @@ class NukeGATPredictor(torch.nn.Module):
 
     def forward(self, data):
         x = data.x
-        x = torch.cat((self.node_embedding(x[:, 0].long()), x[:, 1:]), dim=1)
+        type_ids = x[:, 0].long().clamp(max=self.num_classes)
+        x = torch.cat((self.node_embedding(type_ids), x[:, 1:]), dim=1)
         x_initial = self.feature_encoder(x)
         x = x_initial
         for gat in self.gat_layers:

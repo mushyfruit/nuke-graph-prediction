@@ -1,14 +1,14 @@
+import logging
 import os
 import glob
 import json
 import nuke
 from typing import List, Tuple
 
-from ...api import RequestHandler, PredictionManager
+from ...api.recommendation import PredictionManager
 from ...core.model.constants import TrainingPhase, DirectoryConfig
 from ...core.model.utilities import check_for_model_on_disk
 from ...server.launcher import get_inference_launcher
-from ...logging_config import get_logger
 
 
 try:
@@ -16,29 +16,29 @@ try:
 except ImportError:
     from PySide2 import QtWidgets, QtCore, QtGui, QtNetwork
 
-log = get_logger(__name__)
+log = logging.getLogger(__name__)
 
 
 class PredictionWidget(QtWidgets.QWidget):
     def __init__(
         self,
-        request_handler: RequestHandler,
         prediction_manager: PredictionManager,
         parent=None,
     ):
         super().__init__(parent=parent)
-        self._request_handler = request_handler
+        self._request_handler = prediction_manager._request_handler
         self._prediction_manager = prediction_manager
 
         self._model_exists = False
         self._stored_nuke_files = []
-        self._current_node_name = None
+        self._current_node = None
+        self._prediction_reply = None
         self._pending_requests = set()
         self.network_manager = QtNetwork.QNetworkAccessManager(self)
         self.network_manager.finished.connect(self._on_request_finished)
 
         self.status_timer = QtCore.QTimer(self)
-        self.status_timer.timeout.connect(self._check_training_status)
+        self.status_timer.timeout.connect(lambda: self._request("training_status"))
         self.status_timer.setInterval(1000)
 
         self.health_timer = QtCore.QTimer(self)
@@ -249,7 +249,7 @@ class PredictionWidget(QtWidgets.QWidget):
         self._request("health", timeout=self._request_handler.timeout)
 
     def _request(self, endpoint, data=None, timeout=None):
-        if endpoint in self._pending_requests:
+        if endpoint != "predict" and endpoint in self._pending_requests:
             return
         request = QtNetwork.QNetworkRequest(
             QtCore.QUrl(f"{self._request_handler.base_url}{endpoint}")
@@ -265,16 +265,25 @@ class PredictionWidget(QtWidgets.QWidget):
             reply = self.network_manager.post(request, json.dumps(data).encode("utf-8"))
         reply.setProperty("endpoint", endpoint)
         self._pending_requests.add(endpoint)
+        return reply
 
     def _on_request_finished(self, reply):
         endpoint = reply.property("endpoint")
-        self._pending_requests.remove(endpoint)
+        self._pending_requests.discard(endpoint)
+        if endpoint == "predict":
+            if reply is not self._prediction_reply:
+                reply.deleteLater()
+                return
+            self._prediction_reply = None
         response = {}
         try:
             if reply.error() != QtNetwork.QNetworkReply.NoError:
                 raise RuntimeError(reply.errorString())
             response = json.loads(bytes(reply.readAll()))
-            if endpoint == "train":
+            if endpoint == "predict":
+                self.update_prediction(response["prediction"])
+                self.update_prediction_page_status("")
+            elif endpoint == "train":
                 if response["status"] != TrainingPhase.SERIALIZING.value:
                     raise RuntimeError(
                         response.get("error") or response.get("label") or str(response)
@@ -285,7 +294,10 @@ class PredictionWidget(QtWidgets.QWidget):
             elif endpoint == "training_status":
                 self._update_training_status(response)
         except Exception as e:
-            if endpoint != "health":
+            if endpoint == "predict":
+                self.clear_prediction()
+                self.update_prediction_page_status(str(e))
+            elif endpoint != "health":
                 log.error(f"Training request failed: {e}")
                 self._update_training_status_label(str(e))
                 self._on_model_finish(successful=False)
@@ -304,8 +316,8 @@ class PredictionWidget(QtWidgets.QWidget):
         inference_launcher = get_inference_launcher()
         inference_launcher.restart_service(host=host, port=port)
 
-        self._request_handler.set_host(host)
-        self._request_handler.set_port(port)
+        self.clear_prediction()
+        self._request_handler.configure(host, port)
 
     def _on_training_btn_clicked(self):
         if not self._stored_nuke_files:
@@ -335,10 +347,6 @@ class PredictionWidget(QtWidgets.QWidget):
             self.fine_tune_checkbox.setChecked(True)
             self._prediction_manager.refresh_manager()
             self.update_prediction_page_status("")
-
-    def _check_training_status(self):
-        if self.status_timer.isActive():
-            self._request("training_status")
 
     def _update_training_status(self, response):
         status = response["status"]
@@ -371,7 +379,7 @@ class PredictionWidget(QtWidgets.QWidget):
 
         self.callback_label = QtWidgets.QLabel("Predict on Selection:")
         self.callback_checkbox = QtWidgets.QCheckBox()
-        self.callback_checkbox.toggled.connect(self._on_callback_toggle)
+        self.callback_checkbox.toggled.connect(self._prediction_manager.toggle_callback)
 
         header_layout.addWidget(self.callback_label)
         header_layout.addWidget(self.callback_checkbox)
@@ -411,9 +419,6 @@ class PredictionWidget(QtWidgets.QWidget):
         prediction_layout.addLayout(button_layout)
         prediction_layout.addLayout(bottom_status_layout)
 
-    def _on_callback_toggle(self, enabled):
-        self._prediction_manager.toggle_callback(enabled)
-
     def _on_prediction_double_clicked(self, item, column):
         node_type = item.data(0, QtCore.Qt.UserRole)
         if not node_type:
@@ -421,7 +426,11 @@ class PredictionWidget(QtWidgets.QWidget):
             return
 
         try:
-            nuke.createNode(node_type, inpanel=False)
+            with self._current_node.parent():
+                for node in nuke.selectedNodes():
+                    node.setSelected(False)
+                self._current_node.setSelected(True)
+                nuke.createNode(node_type, inpanel=False)
         except Exception as e:
             log.error(f"Failed to create prediction node: {e}")
 
@@ -430,14 +439,28 @@ class PredictionWidget(QtWidgets.QWidget):
             self._check_for_model_on_disk()
             self._prediction_manager.refresh_manager()
 
-        self._prediction_manager.perform_recommendation(self._current_node_name)
+        self._prediction_manager.perform_recommendation(self._current_node)
+
+    def clear_prediction(self):
+        reply, self._prediction_reply = self._prediction_reply, None
+        if reply is not None:
+            reply.abort()
+        self.update_selected_node(None)
+        self.update_prediction([])
+        self.update_prediction_page_status("")
+
+    def request_prediction(self, graph_data, target_node):
+        self.update_selected_node(target_node)
+        self.update_prediction_page_status("Predicting...")
+        self._prediction_reply = self._request("predict", graph_data, timeout=30)
 
     def update_prediction_page_status(self, label):
         self.bottom_status_label.setText(label)
 
     def update_selected_node(self, selected_node):
-        self._current_node_name = selected_node
-        self.selected_node_label.setText("Selected Node: {}".format(selected_node))
+        self._current_node = selected_node
+        name = selected_node.fullName() if selected_node is not None else None
+        self.selected_node_label.setText(f"Selected Node: {name}")
 
     def update_prediction(self, node_predictions: List[Tuple[str, float]]):
         self.prediction_tree.clear()
@@ -457,12 +480,11 @@ class PredictionWidget(QtWidgets.QWidget):
 class FileInputWidget(QtWidgets.QWidget):
     folder_selected = QtCore.Signal(str)
 
-    def __init__(self, label=None, parent=None):
+    def __init__(self, label, parent=None):
         super().__init__(parent)
         layout = QtWidgets.QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        self.label = None
         self.line_edit = QtWidgets.QLineEdit()
         self.line_edit.editingFinished.connect(
             lambda: self.folder_selected.emit(self.line_edit.text())
@@ -470,9 +492,8 @@ class FileInputWidget(QtWidgets.QWidget):
         self.browse_button = QtWidgets.QPushButton("Browse")
         self.browse_button.clicked.connect(self.browse_folders)
 
-        if label:
-            self.label = QtWidgets.QLabel(label)
-            layout.addWidget(self.label)
+        self.label = QtWidgets.QLabel(label)
+        layout.addWidget(self.label)
 
         layout.addWidget(self.line_edit)
         layout.addWidget(self.browse_button)

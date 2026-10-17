@@ -2,15 +2,14 @@ from typing import Optional, Dict, Any, Callable
 
 import nuke
 
-from ..dcc_backend import DCCBackend
 from .parser import NukeScript, NukeGroup, NukeNode, NukeScriptParser, GROUP_INPUT_NODE, IGNORE_NODES
 from .serialization import NukeGraphSerializer
 
 
-class NukeBackend(DCCBackend):
-    def get_target_node(self, node_name: Optional[str] = None) -> Optional[nuke.Node]:
-        if node_name:
-            return nuke.toNode(node_name)
+class NukeBackend:
+    def get_target_node(self, node: Optional[nuke.Node] = None) -> Optional[nuke.Node]:
+        if node is not None:
+            return node
 
         try:
             return nuke.selectedNode()

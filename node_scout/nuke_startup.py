@@ -1,25 +1,32 @@
 import nuke
 import nukescripts
 
-from . import recommendation
-from .server.launcher import launch_inference_service
+from .api.recommendation import get_prediction_manager
+from .server.launcher import get_inference_launcher
 from .ui.nuke import prediction_panel
 
 
 def on_startup():
     try:
-        launch_inference_service()
+        get_inference_launcher().start_service()
+    except Exception as e:
+        nuke.message(f"Failed to start ML service: {e}")
+        return
 
+    if not nuke.GUI:
+        return
+
+    try:
         register_prediction_panel()
 
         nuke.menu("Nuke").addCommand(
             "Edit/Node/Auto-Predict",
-            "node_scout.recommendation.perform_recommendation()",
+            lambda: get_prediction_manager().perform_recommendation(),
             "ctrl+shift+t",
         )
 
     except Exception as e:
-        nuke.message(f"Failed to start ML service: {str(e)}")
+        nuke.message(f"Failed to register NodeScout menus: {e}")
 
 
 def register_prediction_panel():

@@ -6,7 +6,7 @@ from tqdm import tqdm
 
 from .vocabulary import Vocabulary
 from .deserialize import create_graph_data
-from ..constants import NukeScript, DirectoryConfig, VOCAB
+from ..constants import DirectoryConfig
 
 import torch
 from typing import Dict, Optional, Any
@@ -15,11 +15,7 @@ log = logging.getLogger(__name__)
 
 
 class GraphDataset:
-    def __init__(
-        self,
-        root_dir,
-        force_rebuild: bool = False,
-    ):
+    def __init__(self, root_dir):
         self.file_paths = [
             os.path.join(root_dir, file)
             for file in os.listdir(root_dir)
@@ -31,10 +27,9 @@ class GraphDataset:
                 file_hashes[file_path] = hashlib.sha256(f.read()).hexdigest()
 
         cache_path = os.path.join(DirectoryConfig.DATA_CACHE_PATH, "process_graphs.pt")
-        self.vocabulary_path = os.path.join(DirectoryConfig.DATA_CACHE_PATH, VOCAB)
-        self.vocab = Vocabulary(self.vocabulary_path)
+        self.vocab = Vocabulary(DirectoryConfig.VOCAB_PATH)
 
-        if not force_rebuild and os.path.exists(cache_path):
+        if os.path.exists(cache_path):
             saved_data = torch.load(cache_path, weights_only=False)
             if saved_data.get("files") == file_hashes and saved_data.get("vocab") == [
                 self.vocab.get_type(i) for i in range(len(self.vocab))
@@ -49,7 +44,7 @@ class GraphDataset:
 
             self.examples.extend(self.generate_graph_training_examples(data))
 
-        self.vocab.save(self.vocabulary_path)
+        self.vocab.save(DirectoryConfig.VOCAB_PATH)
         torch.save(
             {
                 "examples": self.examples,
@@ -67,8 +62,7 @@ class GraphDataset:
         max_context: Optional[int] = 50,
         stride: Optional[int] = 3,
     ):
-        root_group = data[NukeScript.ROOT]
-        nodes = root_group[NukeScript.NODES]
+        nodes = data["root"]["nodes"]
 
         graph_node_data = list(nodes.values())
         examples = []
@@ -82,7 +76,6 @@ class GraphDataset:
                 update_vocab=True,
                 min_upstream_nodes=min_context,
                 max_upstream_nodes=max_context,
-                filter_graphs=True,
             )
             if graph_data is None:
                 continue
@@ -99,9 +92,3 @@ class GraphDataset:
     @property
     def num_features(self) -> int:
         return self.examples[0].num_node_features if self.examples else 0
-
-    def __len__(self) -> int:
-        return len(self.examples)
-
-    def __getitem__(self, idx):
-        return self.examples[idx]

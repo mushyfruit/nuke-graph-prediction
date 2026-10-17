@@ -108,6 +108,43 @@ class NukeScriptParser:
             if not line or line.lstrip().startswith("#"):
                 continue
 
+            if not current_node:
+                if line.strip() == "end_group":
+                    script.exit_group()
+                    continue
+
+                if line.lstrip().startswith(("Root {", "define_window_layout_xml ", "add_layer ")):
+                    ignored_depth = self.get_brace_depth(line)
+                    continue
+                node_match = self.node_start.fullmatch(line)
+                if node_match:
+                    current_node = node_match.group(1)
+                    if current_node in IGNORE_NODES:
+                        ignored_depth = self.get_brace_depth(line)
+                        current_node = None
+                    elif current_node == "clone":
+                        source_name = script.variables[node_match.group(2)]
+                        source = next(
+                            group.nodes[source_name]
+                            for group in script.groups.values()
+                            if source_name in group.nodes
+                        )
+                        current_node = source.node_type
+                        current_params = source.parameters.copy()
+                        current_params.pop("inputs", None)
+                    if current_node:
+                        params = node_match.group(3)
+                        if self.get_brace_depth(line) == 0:
+                            self.handle_node_parameter(
+                                params.rstrip().removesuffix("}").rstrip(), current_params
+                            )
+                            line = "}"
+                        else:
+                            self.handle_node_parameter(params, current_params)
+                            continue
+                    else:
+                        continue
+
             if current_node:
                 if line.strip() != "}":
                     self.handle_node_parameter(line, current_params)
@@ -125,33 +162,6 @@ class NukeScriptParser:
                     script.enter_group(node.name)
                 current_node = None
                 current_params = {}
-                continue
-
-            if line.strip() == "end_group":
-                script.exit_group()
-                continue
-
-            if line.lstrip().startswith(("Root {", "define_window_layout_xml ", "add_layer ")):
-                ignored_depth = self.get_brace_depth(line)
-                continue
-            node_match = self.node_start.fullmatch(line)
-            if node_match:
-                current_node = node_match.group(1)
-                if current_node in IGNORE_NODES:
-                    ignored_depth = 1
-                    current_node = None
-                elif current_node == "clone":
-                    source_name = script.variables[node_match.group(2)]
-                    source = next(
-                        group.nodes[source_name]
-                        for group in script.groups.values()
-                        if source_name in group.nodes
-                    )
-                    current_node = source.node_type
-                    current_params = source.parameters.copy()
-                    current_params.pop("inputs", None)
-                if current_node and node_match.group(3):
-                    self.handle_node_parameter(node_match.group(3), current_params)
                 continue
 
             set_match = self.set_var.match(line)
