@@ -1,5 +1,3 @@
-import logging
-import numpy as np
 from collections import deque
 
 from .vocabulary import Vocabulary
@@ -8,8 +6,6 @@ import torch
 from torch_geometric.data import Data
 
 from typing import Dict, Optional, List, Any
-
-log = logging.getLogger(__name__)
 
 
 def create_graph_data(
@@ -42,7 +38,6 @@ def create_graph_data(
     if not nodes:
         raise RuntimeError("No nodes found in serialized graph!")
 
-    # Construct the upstream graph.
     upstreams = get_upstream_nodes(
         nodes,
         start_node_data,
@@ -50,7 +45,6 @@ def create_graph_data(
         include_start=include_start_node,
     )
 
-    # Ensure a minimum number of upstream nodes for the graph data.
     if filter_graphs and len(upstreams) < min_upstream_nodes:
         return None
 
@@ -61,34 +55,22 @@ def create_graph_data(
 
         raw_features.append(get_node_features(node_data, vocabulary))
 
-    normalized_features = normalize_features(raw_features)
-
-    # Build edge connections
     edge_index = [[], []]
-    edge_attr = []
     node_name_to_idx = {
         node_dict["name"]: idx for idx, node_dict in enumerate(upstreams)
     }
 
     for node_data in upstreams:
         curr_idx = node_name_to_idx[node_data["name"]]
-        for input_idx, input_node in enumerate(node_data.get("input_connections", [])):
+        for input_node in node_data.get("input_connections", []):
             if input_node in node_name_to_idx:
                 source_idx = node_name_to_idx[input_node]
                 edge_index[0].append(source_idx)
                 edge_index[1].append(curr_idx)
-                edge_attr.append(input_idx)
 
-    # Create node, edge connectivity, and edge feature matrices.
-    node_features = torch.tensor(normalized_features, dtype=torch.float32)
-    edge_index = torch.tensor(edge_index, dtype=torch.long)
-    edge_attr = torch.tensor(edge_attr, dtype=torch.long).unsqueeze(1)
-
-    # Return the initialized data object (excludes a ground-truth label)
     return Data(
-        x=node_features,
-        edge_index=edge_index,
-        edge_attr=edge_attr,
+        x=normalize_features(raw_features),
+        edge_index=torch.tensor(edge_index, dtype=torch.long),
         num_nodes=len(upstreams),
     )
 
@@ -129,25 +111,19 @@ def get_upstream_nodes(
 def normalize_features(
     raw_features: List[List[Any]],
     numerical_indices: Optional[List[int]] = None,
-) -> List[List[Any]]:
+) -> torch.Tensor:
     if numerical_indices is None:
         numerical_indices = [1, 2, 4, 5]
 
-    features = np.array(raw_features)
-    normalized = features.copy()
-
+    features = torch.tensor(raw_features, dtype=torch.float32)
     if len(features) > 1:
-        for idx in numerical_indices:
-            values = features[:, idx]
-            mean = np.mean(values)
-            std = np.std(values)
+        values = features[:, numerical_indices]
+        mean = values.mean(dim=0)
+        std = values.std(dim=0, correction=0)
+        std = torch.where(std > 1e-6, std, 1)
+        features[:, numerical_indices] = (values - mean) / std
 
-            if std > 1e-6:
-                normalized[:, idx] = (values - mean) / std
-            else:
-                normalized[:, idx] = values - mean
-
-    return normalized.tolist()
+    return features
 
 
 def get_node_features(node_data: Dict[str, Any], vocab: Vocabulary) -> List[Any]:
@@ -158,13 +134,9 @@ def get_node_features(node_data: Dict[str, Any], vocab: Vocabulary) -> List[Any]
     ypos = node_data.get("ypos", 0)
 
     return [
-        # Categorical node information.
         vocab.get_idx(node_type),
-        # Numerical node information.
-        # These are normalized in graph preprocessing.
         node_data["inputs"],
         len(node_data.get("input_connections", [])),
-        # Binary node information.
         is_merge,
         xpos,
         ypos,

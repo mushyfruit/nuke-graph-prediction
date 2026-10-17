@@ -3,8 +3,6 @@ import json
 import logging
 from typing import Dict, Optional
 
-from torch_geometric.data import Data
-
 log = logging.getLogger(__name__)
 
 
@@ -17,7 +15,7 @@ class Vocabulary:
             self.load(vocab_file)
 
     def get_idx(self, node_type: str) -> int:
-        return self.add(node_type)
+        return self._type_to_idx.get(node_type, len(self))
 
     def get_type(self, idx: int) -> str:
         return self._idx_to_type[idx]

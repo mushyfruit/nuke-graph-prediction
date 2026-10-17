@@ -64,8 +64,12 @@ class NukeGATPredictor(torch.nn.Module):
         self.num_classes = num_classes
         self.beta = beta
 
+        # Type id column -> 8-dim embedding; the extra zero row is for unknown types.
+        self.node_embedding = torch.nn.Embedding(
+            num_classes + 1, 8, padding_idx=num_classes
+        )
         self.feature_encoder = torch.nn.Sequential(
-            Linear(num_features, hidden_channels),
+            Linear(num_features - 1 + 8, hidden_channels),
             LayerNorm(hidden_channels),
             torch.nn.GELU(),
             torch.nn.Dropout(dropout),
@@ -75,15 +79,20 @@ class NukeGATPredictor(torch.nn.Module):
             torch.nn.Dropout(dropout),
         )
 
-        # GAT layers with multi-head attention, initial res connections.
-        self.get_gat_layers()
-
-        # Add layer normalization after each GAT layer
-        self.norms = torch.nn.ModuleList(
-            [LayerNorm(hidden_channels * heads) for _ in range(num_layers)]
+        self.gat_layers = torch.nn.ModuleList(
+            [
+                InitialResidualGATLayer(
+                    hidden_channels if i == 0 else hidden_channels * heads,
+                    hidden_channels,
+                    hidden_channels,
+                    heads=heads,
+                    dropout=dropout,
+                    beta=beta,
+                )
+                for i in range(num_layers)
+            ]
         )
 
-        # Final prediction layers with correct dimensions
         final_dim = hidden_channels * heads
 
         self.prediction_head = torch.nn.Sequential(
@@ -98,35 +107,7 @@ class NukeGATPredictor(torch.nn.Module):
             Linear(hidden_channels, self.num_classes),
         )
 
-        self.dropout = dropout
         self.apply(self._init_weights)
-
-    def get_gat_layers(self):
-        self.gat_layers = torch.nn.ModuleList()
-
-        self.gat_layers.append(
-            InitialResidualGATLayer(
-                self.hidden_channels,
-                self.hidden_channels,
-                self.hidden_channels,
-                heads=self.heads,
-                dropout=self.dropout,
-                beta=self.beta,
-            )
-        )
-
-        # Middle layers: maintain hidden_channels * heads dimension
-        for _ in range(self.num_layers - 1):
-            self.gat_layers.append(
-                InitialResidualGATLayer(
-                    self.hidden_channels * self.heads,
-                    self.hidden_channels,
-                    self.hidden_channels,
-                    heads=self.heads,
-                    dropout=self.dropout,
-                    beta=self.beta,
-                )
-            )
 
     def _init_weights(self, module):
         if isinstance(module, Linear):
@@ -136,23 +117,15 @@ class NukeGATPredictor(torch.nn.Module):
 
     def forward(self, data):
         x = data.x
-        edge_index = data.edge_index
-
-        x_encoded = self.feature_encoder(x)
-        x_initial = x_encoded
-
-        x = x_encoded
-        for gat, norm in zip(self.gat_layers, self.norms):
-            x = gat(x, x_initial, edge_index)
+        x = torch.cat((self.node_embedding(x[:, 0].long()), x[:, 1:]), dim=1)
+        x_initial = self.feature_encoder(x)
+        x = x_initial
+        for gat in self.gat_layers:
+            x = gat(x, x_initial, data.edge_index)
             x = F.dropout(x, p=self.dropout, training=self.training)
 
-        # [batch_size, hidden_channels * heads]
         x = global_mean_pool(x, data.batch)
-
-        # Final prediction layers
-        logits = self.prediction_head(x)
-
-        return logits
+        return self.prediction_head(x)
 
     def to_checkpoint(self) -> dict:
         return {
