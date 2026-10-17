@@ -53,7 +53,7 @@ class TrainingStatus:
     def to_dict(self) -> Dict[str, Any]:
         status_dict = {"status": self.phase.value}
 
-        if self.progress:
+        if self.progress is not None:
             status_dict["progress"] = self.progress
 
         if self.label:
@@ -69,7 +69,9 @@ class TrainingStatus:
                     "total_epochs": self.total_epochs,
                     "training_loss": self.training_loss,
                     "training_accuracy": self.training_accuracy,
+                    "validation_loss": self.validation_loss,
                     "validation_accuracy": self.validation_accuracy,
+                    "topk_accuracy": self.topk_accuracy,
                 }
             )
 

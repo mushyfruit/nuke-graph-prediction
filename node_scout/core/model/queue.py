@@ -27,12 +27,6 @@ class StatusQueue(queue.Queue):
                     log.warning("Error: failed to put status to queue!")
                     return False
 
-    def safe_get(self) -> Optional[TrainingStatus]:
-        try:
-            return self.get_nowait()
-        except queue.Empty:
-            return None
-
     def get_latest(self) -> Optional[TrainingStatus]:
         try:
             return list(self.queue)[-1]

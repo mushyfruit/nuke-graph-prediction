@@ -1,8 +1,10 @@
 import os
-import time
 import logging
 import threading
 
+import matplotlib
+
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from .constants import DirectoryConfig
@@ -11,7 +13,7 @@ log = logging.getLogger(__name__)
 
 
 class LossPlotterThread(threading.Thread):
-    def __init__(self, plot_queue, plot_path=None):
+    def __init__(self, plot_queue):
         super().__init__()
 
         log.info("Starting the daemon plotting thread.")
@@ -30,15 +32,15 @@ class LossPlotterThread(threading.Thread):
 
         plt.rcParams.update(
             {
-                "axes.facecolor": "#2c2c2c",  # chart panel background
-                "figure.facecolor": "#2c2c2c",  # full image background
-                "axes.edgecolor": "#cccccc",  # border color
+                "axes.facecolor": "#2c2c2c",
+                "figure.facecolor": "#2c2c2c",
+                "axes.edgecolor": "#cccccc",
                 "axes.labelcolor": "#dddddd",
                 "xtick.color": "#aaaaaa",
                 "ytick.color": "#aaaaaa",
                 "text.color": "#ffffff",
                 "legend.frameon": True,
-                "legend.facecolor": "#1e1e1e",  # legend background
+                "legend.facecolor": "#1e1e1e",
                 "legend.edgecolor": "#ffffff",
                 "axes.grid": True,
                 "grid.color": "#444444",
@@ -46,27 +48,25 @@ class LossPlotterThread(threading.Thread):
         )
 
     def run(self):
-        while not self._stop_event.is_set():
-            # Drain any updates from the queue
+        while not self._stop_event.is_set() or not self.queue.empty():
+            updated = False
             while not self.queue.empty():
                 status = self.queue.get_nowait()
-                log.info(f"Received status {status}")
+                updated = True
                 if status.training_loss is not None:
                     self.train_loss.append(status.training_loss)
                 if status.validation_loss is not None:
                     self.val_loss.append(status.validation_loss)
 
-                if hasattr(status, "topk_accuracy"):
+                if status.topk_accuracy is not None:
                     for k in self.topk_history:
                         if k in status.topk_accuracy:
                             self.topk_history[k].append(status.topk_accuracy[k])
 
-            # Plot if any data exists
-            if self.train_loss:
-                log.info("Plotting loss and generating an image.")
+            if updated and self.train_loss:
                 self.plot_losses()
 
-            time.sleep(2)
+            self._stop_event.wait(0.1)
 
     def plot_losses(self):
         self._plot_loss_graph()

@@ -2,6 +2,7 @@ import os
 import sys
 import logging
 import traceback
+from contextlib import asynccontextmanager
 from typing import List, Dict, Optional, Tuple
 
 from fastapi import FastAPI, HTTPException, Request, Depends
@@ -12,8 +13,6 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from core.model.manager import GNNPipelineManager
 from core.model.dataset.deserialize import create_graph_data
 
-app = FastAPI()
-
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
@@ -23,6 +22,8 @@ class Node(BaseModel):
     node_type: str
     inputs: int
     input_connections: List[str]
+    xpos: int = 0
+    ypos: int = 0
 
 
 class Root(BaseModel):
@@ -61,17 +62,20 @@ class TrainingRequest(BaseModel):
         return v
 
 
-@app.on_event("startup")
-async def load_pipeline_manager():
+@asynccontextmanager
+async def lifespan(app):
     from core.model.gnn.gat import NukeGATPredictor
-    from core.model.main import TrainingConfig
     from core.model.constants import MODEL_NAME
 
     app.state.predictor = GNNPipelineManager(
         model_class=NukeGATPredictor,
-        model_config=TrainingConfig(),
+        model_config=dict(hidden_channels=128, num_layers=4, heads=8, dropout=0.3),
         model_name=MODEL_NAME,
     )
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 def get_pipeline_manager(request: Request) -> GNNPipelineManager:
@@ -87,17 +91,18 @@ def health_check():
 async def get_training_status(
     predictor: GNNPipelineManager = Depends(get_pipeline_manager),
 ):
-    """Get current training status"""
     training_status = predictor.get_training_status()
     return training_status.to_dict()
 
 
 @app.post("/predict", response_model=PredictionResponse)
-async def predict(
+def predict(
     request: PredictionRequest,
     predictor: GNNPipelineManager = Depends(get_pipeline_manager),
 ):
-    """Prediction endpoint"""
+    if predictor.get_vocabulary() is None and not predictor.load():
+        raise HTTPException(status_code=503, detail="Model is not loaded")
+
     try:
         start_node_name = request.start_node
         log.info(f"Predicting node: {start_node_name}")
@@ -108,6 +113,7 @@ async def predict(
             start_node,
             predictor.get_vocabulary(),
             filter_graphs=False,
+            include_start_node=True,
         )
         prediction = predictor.predict(pyg_graph_data)
         return PredictionResponse(prediction=prediction, start_node=start_node_name)
@@ -124,9 +130,7 @@ async def train(
     request: TrainingRequest,
     predictor: GNNPipelineManager = Depends(get_pipeline_manager),
 ):
-    """Prediction endpoint"""
     try:
-        # Parse and serialize the scripts!
         log.info("Received a training request!")
         result = predictor.train(
             request.file_paths, request.memory_allocation, request.enable_fine_tuning
