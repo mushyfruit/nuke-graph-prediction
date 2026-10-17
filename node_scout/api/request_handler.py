@@ -1,7 +1,7 @@
 import os
 import json
 import urllib.request
-from urllib.error import URLError, HTTPError
+from urllib.error import URLError
 
 from contextlib import contextmanager
 from typing import Dict, Any, Optional, List
@@ -66,14 +66,14 @@ class RequestHandler:
     def _handle_request_error(self):
         try:
             yield
-        except (URLError, HTTPError) as e:
+        except URLError as e:
             error_body = None
             if hasattr(e, "read"):
                 error_body = e.read().decode("utf-8")
             status_code = getattr(e, "code", None)
 
             raise InferenceRequestError(
-                f"Request failed: {str(error_body)}",
+                f"Request failed: {error_body or e}",
                 status_code=status_code,
                 response_body=error_body,
             )

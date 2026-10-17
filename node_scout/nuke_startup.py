@@ -1,19 +1,15 @@
 import nuke
 import nukescripts
 
+from . import recommendation
 from .server.launcher import launch_inference_service
 from .ui.nuke import prediction_panel
 
-_model_vocabulary = None
-
 
 def on_startup():
-    """Initialize ML service on Nuke startup"""
     try:
-        # Start inference service in a separate thread.
         launch_inference_service()
 
-        # Register the python panel.
         register_prediction_panel()
 
         nuke.menu("Nuke").addCommand(
