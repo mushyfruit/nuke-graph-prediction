@@ -82,7 +82,7 @@ class NukeScriptParser:
     IGNORE_PARAMS = {"addUserKnob", "onCreate", "knobChanged"}
 
     def __init__(self):
-        self.node_start = re.compile(r"\s*([\w.]+)(?:\s+\$(\w+))?\s*{\s*$")
+        self.node_start = re.compile(r"\s*([\w.-]+)(?:\s+\$(\w+))?\s*{\s*(.*)$")
         self.node_param = re.compile(r"\s*(\w+)\s+(.*)")
         self.set_var = re.compile(r"\s*set\s+(\w+)\s+\[stack\s+0\]")
         self.push_var = re.compile(r"\s*push\s+\$(\w+)")
@@ -116,7 +116,7 @@ class NukeScriptParser:
                 node = NukeNode(
                     name=current_params["name"],
                     node_type=current_node,
-                    inputs=sum(map(int, current_params.get("inputs", "1").split("+"))),
+                    inputs=sum(map(int, current_params.get("inputs", "1").split("inputs")[0].strip().split("+"))),
                     script_counters=script.node_name_counter,
                     parameters=current_params,
                 )
@@ -150,6 +150,8 @@ class NukeScriptParser:
                     current_node = source.node_type
                     current_params = source.parameters.copy()
                     current_params.pop("inputs", None)
+                if current_node and node_match.group(3):
+                    self.handle_node_parameter(node_match.group(3), current_params)
                 continue
 
             set_match = self.set_var.match(line)

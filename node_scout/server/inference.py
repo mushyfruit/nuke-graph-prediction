@@ -21,7 +21,7 @@ class Node(BaseModel):
     name: str
     node_type: str
     inputs: int
-    input_connections: List[str]
+    input_connections: List[Optional[str]]
     xpos: int = 0
     ypos: int = 0
 

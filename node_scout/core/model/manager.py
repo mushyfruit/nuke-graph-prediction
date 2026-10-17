@@ -51,24 +51,26 @@ class GNNPipelineManager:
             log.info(f"Model {self._model_name} not found on disk. Skipping load.")
             return False
 
-        if not os.path.exists(DirectoryConfig.VOCAB_PATH):
-            raise FileNotFoundError(f"Vocab {DirectoryConfig.VOCAB_PATH} not found")
-
         model_checkpoint_path = os.path.join(
             DirectoryConfig.MODEL_PATH, f"{self._model_name}_model.pt"
         )
-        checkpoint = torch.load(model_checkpoint_path, map_location=self.device)
-        state_dict = check_state_dict(checkpoint["state_dict"])
+        try:
+            if not os.path.exists(DirectoryConfig.VOCAB_PATH):
+                raise FileNotFoundError(f"Vocab {DirectoryConfig.VOCAB_PATH} not found")
+            checkpoint = torch.load(model_checkpoint_path, map_location=self.device)
+            state_dict = check_state_dict(checkpoint["state_dict"])
+            vocab = Vocabulary(DirectoryConfig.VOCAB_PATH)
+            model = self._model_class.from_checkpoint(
+                checkpoint, num_classes=state_dict["prediction_head.8.bias"].numel()
+            ).to(self.device)
+            model.load_state_dict(state_dict)
+            model.eval()
+        except Exception as e:
+            self._model = self._vocab = None
+            log.warning("Cannot load %s; retrain the model: %s", model_checkpoint_path, e)
+            return False
 
-        self._vocab = Vocabulary(DirectoryConfig.VOCAB_PATH)
-
-        self._model = self._model_class.from_checkpoint(
-            checkpoint, num_classes=state_dict["prediction_head.8.bias"].numel()
-        ).to(self.device)
-
-        self._model.load_state_dict(state_dict)
-
-        self._model.eval()
+        self._model, self._vocab = model, vocab
 
         return True
 
@@ -138,7 +140,9 @@ class GNNPipelineManager:
                 )
                 state = training_model.state_dict()
                 for name, value in checkpoint["state_dict"].items():
-                    if state[name].shape == value.shape:
+                    if name == "node_embedding.weight":
+                        state[name][: value.shape[0] - 1].copy_(value[:-1])
+                    elif state[name].shape == value.shape:
                         state[name].copy_(value)
                     else:
                         state[name][: value.shape[0]].copy_(value)

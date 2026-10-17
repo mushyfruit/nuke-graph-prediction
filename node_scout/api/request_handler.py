@@ -4,7 +4,7 @@ import urllib.request
 from urllib.error import URLError
 
 from contextlib import contextmanager
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 
 from ..logging_config import get_logger
 
@@ -101,31 +101,3 @@ class RequestHandler:
             with urllib.request.urlopen(request, timeout=timeout) as response:
                 response_body = response.read().decode("utf-8")
                 return json.loads(response_body)
-
-    def get(
-        self,
-        endpoint: str,
-        custom_timeout: Optional[float] = None,
-    ) -> Dict[str, Any]:
-        url = f"{self.base_url}{endpoint}"
-
-        headers = {"Accept": "application/json"}
-        request = urllib.request.Request(url, headers=headers, method="GET")
-
-        with self._handle_request_error():
-            timeout = custom_timeout if custom_timeout is not None else self.timeout
-            with urllib.request.urlopen(request, timeout=timeout) as response:
-                response_body = response.read().decode("utf-8")
-                return json.loads(response_body)
-
-    def kickoff_training(
-        self, file_paths: List[str], memory_allocation: float, enable_fine_tuning: bool
-    ):
-        data = {
-            "file_paths": file_paths,
-            "memory_allocation": memory_allocation,
-            "enable_fine_tuning": enable_fine_tuning,
-        }
-
-        log.info("Posted to train.")
-        return self.post("train", data, custom_timeout=3600)

@@ -5,12 +5,13 @@ from .parser import NukeNode
 
 
 class NukeGraphSerializer:
-    def __init__(self, output_dir, include_params=False, remove_passthrough_nodes=True):
+    def __init__(self, output_dir=None, include_params=False, remove_passthrough_nodes=True):
         self.output_dir = output_dir
         self.include_params = include_params
         self.remove_passthrough_nodes = remove_passthrough_nodes
 
-        os.makedirs(self.output_dir, exist_ok=True)
+        if self.output_dir is not None:
+            os.makedirs(self.output_dir, exist_ok=True)
 
     def _serialize_node(self, node: NukeNode, node_id: str):
         node_dict = {
@@ -39,11 +40,13 @@ class NukeGraphSerializer:
             "nodes": child_nodes,
         }
 
-    def serialize_graph(self, script_name, nuke_script):
+    def serialize_graph(self, script_name, nuke_script, start_node=None):
         graph_data = {
             "script_name": script_name,
             nuke_script.root_group.name: self._serialize_group(nuke_script.root_group),
         }
+        if start_node is not None:
+            graph_data["start_node"] = start_node
 
         for group in nuke_script.groups.values():
             if group.parent is None:
@@ -52,11 +55,17 @@ class NukeGraphSerializer:
             self._flatten_child_group(graph_data, group)
 
         if self.remove_passthrough_nodes:
-            self._remove_passthrough_nodes(graph_data["root"]["nodes"])
+            replacements = self._remove_passthrough_nodes(graph_data["root"]["nodes"])
+            if start_node is not None:
+                graph_data["start_node"] = replacements.get(
+                    graph_data["start_node"], graph_data["start_node"]
+                )
 
-        output_path = os.path.join(self.output_dir, "{0}.json".format(script_name))
-        with open(output_path, "w") as f:
-            json.dump(graph_data, f, indent=2)
+        if self.output_dir is not None:
+            output_path = os.path.join(self.output_dir, "{0}.json".format(script_name))
+            with open(output_path, "w") as f:
+                json.dump(graph_data, f, indent=2)
+        return graph_data
 
     def _flatten_child_group(self, graph_data, group):
         root_nodes = graph_data["root"]["nodes"]
@@ -65,6 +74,8 @@ class NukeGraphSerializer:
         for node in group.input_stack:
             index = int(node.parameters.get("number", 0))
             input_nodes[node.name] = connections[index] if index < len(connections) else None
+        if graph_data.get("start_node") in input_nodes:
+            graph_data["start_node"] = input_nodes[graph_data["start_node"]]
 
         child_nodes = self._serialize_group(group)["nodes"]
         for node in child_nodes.values():
@@ -81,6 +92,8 @@ class NukeGraphSerializer:
                 )
         else:
             output_input = next(iter(output_node["input_connections"]), None)
+            if graph_data.get("start_node") in {group.name, output_node["name"]}:
+                graph_data["start_node"] = output_input
             for node in root_nodes.values():
                 node["input_connections"] = [
                     output_input if conn == group.name else conn
@@ -117,3 +130,4 @@ class NukeGraphSerializer:
             node["input_connections"] = [
                 replacements.get(conn, conn) for conn in node["input_connections"]
             ]
+        return replacements
