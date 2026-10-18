@@ -3,7 +3,6 @@ from enum import Enum
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
 
-VOCAB = "vocab.json"
 MODEL_NAME = "nuke_predictor_gat"
 
 
@@ -14,16 +13,16 @@ class DirectoryConfig:
     MODEL_DATA_FOLDER = os.path.join(BASE_DIR, "tmp", "nuke_graphs")
     TMP_GRAPH_FOLDER = os.path.join(BASE_DIR, "tmp", "graph_vis")
     DATA_CACHE_PATH = os.path.join(MODEL_PATH, "data_cache")
-    VOCAB_PATH = os.path.join(DATA_CACHE_PATH, VOCAB)
-    TRAINING_LOG_FILE = os.path.join(MODEL_PATH, "logs", "training.log")
+    VOCAB_PATH = os.path.join(DATA_CACHE_PATH, "vocab.json")
 
     LOSS_PLOT = os.path.join(TMP_GRAPH_FOLDER, "loss.png")
     TOPK_PLOT = os.path.join(TMP_GRAPH_FOLDER, "topk.png")
 
-
-class NukeScript:
-    ROOT = "root"
-    NODES = "nodes"
+    VENV_DIR = os.path.join(BASE_DIR, "inference_venv")
+    VENV_SETUP_SCRIPT = os.path.join(BASE_DIR, "bin", "create-venv.sh")
+    INFERENCE_SCRIPT_PATH = os.path.join(BASE_DIR, "server", "inference.py")
+    LOG_FILE = os.path.join(MODEL_PATH, "logs", "auto-predict.log")
+    SERVER_LOG_FILE = os.path.join(MODEL_PATH, "logs", "server.log")
 
 
 class TrainingPhase(Enum):
@@ -53,7 +52,7 @@ class TrainingStatus:
     def to_dict(self) -> Dict[str, Any]:
         status_dict = {"status": self.phase.value}
 
-        if self.progress:
+        if self.progress is not None:
             status_dict["progress"] = self.progress
 
         if self.label:
@@ -69,7 +68,9 @@ class TrainingStatus:
                     "total_epochs": self.total_epochs,
                     "training_loss": self.training_loss,
                     "training_accuracy": self.training_accuracy,
+                    "validation_loss": self.validation_loss,
                     "validation_accuracy": self.validation_accuracy,
+                    "topk_accuracy": self.topk_accuracy,
                 }
             )
 

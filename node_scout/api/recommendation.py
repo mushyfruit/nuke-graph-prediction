@@ -1,50 +1,25 @@
-import os
-import json
-from typing import Dict, Optional, Any
+import logging
+from functools import lru_cache
 
 from .request_handler import RequestHandler
 
-from .. import model_cnst
-from ..core.dcc_backend import DCCBackend
-from ..logging_config import get_logger
-from ..core.utilities import detect_current_dcc
 from ..core.model.utilities import check_for_model_on_disk
 
-log = get_logger(__name__)
-
-_prediction_manager = None
+log = logging.getLogger(__name__)
 
 
+@lru_cache(maxsize=1)
 def get_prediction_manager():
-    global _prediction_manager
-    if not _prediction_manager:
-        _prediction_manager = PredictionManager()
-    return _prediction_manager
+    return PredictionManager()
 
 
 class PredictionManager:
-    """Manages graph traversal and serialization for the recommendation system.
+    def __init__(self):
+        from ..core.nuke.nuke_backend import NukeBackend
 
-    Serialized graph data is posted via the :class:`RequestHandler` to the
-    inference service running in a separate process.
-    """
-
-    def __init__(self, backend: DCCBackend = None):
-        self._vocabulary: Dict[str, int] = {}
-
-        self._panel = self._get_panel_instance()
-
-        # Handle DCC specific API calls.
-        self._backend = backend or self._get_dcc_backend()
-
-        # Handles request to inference server.
+        self._backend = NukeBackend()
         self._request_handler = RequestHandler()
-
-        # Minimum number of upstream nodes required to make valid inference request.
-        self._min_node_requirement = 3
-
         self._model_exists = check_for_model_on_disk()
-        self._load_model_vocab()
 
     def toggle_callback(self, enable_callback: bool):
         if enable_callback:
@@ -58,101 +33,59 @@ class PredictionManager:
 
         self.perform_recommendation()
 
-    def perform_recommendation(self, node_name: Optional[str] = None) -> None:
-        """Retrieves the next-node predictions for the given or selected node.
-
-        :param node_name: Optional node name to perform predictions for.
-        """
+    def perform_recommendation(self, node=None) -> None:
+        widget = self._get_widget()
+        widget.clear_prediction()
         try:
-            target_node = self._backend.get_target_node(node_name=node_name)
+            target_node = self._backend.get_target_node(node)
             if not target_node:
+                widget.update_prediction_page_status("Please select a node!")
                 return
 
             if not self._backend.validate_node_for_inference(target_node):
-                return
-
-            error_msg = None
-            if not self._model_exists:
-                error_msg = "Please train a local model first!"
-            elif not self._vocabulary:
-                error_msg = (
-                    "No model vocabulary found! Please train a local model first."
+                widget.update_prediction_page_status(
+                    f"No prediction available for {target_node.fullName()}!"
                 )
-
-            if error_msg:
-                self._panel.update_training_page_label(error_msg)
                 return
 
-            # Convert upstream nodes to dictionary representations.
-            serialized_graph_data = self._serialize_upstream(start_node=target_node)
-            if not serialized_graph_data:
+            if not self._model_exists:
+                widget.update_prediction_page_status("Please train a local model first!")
                 return
 
-            root_nodes = serialized_graph_data["root"]["nodes"]
-            if len(root_nodes) <= self._min_node_requirement:
-                msg = f"Not enough upstream nodes to predict for {target_node.name()}!"
-                self._panel.update_training_page_label(msg)
-                log.info(msg)
+            graph_data = self._backend.serialize_upstream_nodes(target_node)
+            if graph_data["start_node"] is None:
+                widget.update_prediction_page_status(
+                    f"No prediction available for {target_node.fullName()}!"
+                )
+                return
+            if len(graph_data["root"]["nodes"]) <= 3:
+                widget.update_prediction_page_status(
+                    f"Not enough upstream nodes to predict for {target_node.name()}!"
+                )
                 return
 
-            self._process_prediction(serialized_graph_data)
+            widget.request_prediction(graph_data, target_node)
 
         except Exception as e:
-            log.error(f"Error during recommendation: {str(e)}")
-            self._panel.update_training_page_label(str(e))
+            log.error(f"Error during recommendation: {e}")
+            widget.clear_prediction()
+            widget.update_prediction_page_status(str(e))
 
     def refresh_manager(self):
-        # Check if the model now exists on disk.
         model_exists = check_for_model_on_disk()
-        if not model_exists:
-            return
+        if model_exists and not self._model_exists:
+            self._get_widget().update_prediction_page_status(
+                "Found valid PyTorch model."
+            )
 
-        if not self._model_exists:
-            self._panel.update_training_page_label("Found valid PyTorch model.")
+        self._model_exists = model_exists
 
-        self._model_exists = True
-        self._load_model_vocab()
+    def _get_widget(self):
+        from ..ui.nuke.prediction_panel import get_panel_instance
 
-    def _get_dcc_backend(self):
-        if detect_current_dcc() == "nuke":
-            from ..core.nuke import nuke_backend
-
-            return nuke_backend.NukeBackend()
-        else:
-            raise NotImplementedError("TBD Houdini")
-
-    def _get_panel_instance(self):
-        """Returns a Python panel instance for the target DCC."""
-        if detect_current_dcc() == "nuke":
-            from ..ui.nuke import prediction_panel
-
-            return prediction_panel.get_panel_instance()
-        else:
-            raise NotImplementedError("TBD Houdini")
-
-    def _process_prediction(self, graph_data: Dict) -> None:
-        prediction = self._request_handler.post("predict", graph_data)
-        if not prediction:
-            return
-
-        if not self._panel:
-            log.info(f"Prediction: {prediction}")
-            return
-
-        self._panel.update_prediction_state(prediction)
-
-    def _serialize_upstream(self, start_node: Any) -> Optional[Dict]:
-        return self._backend.serialize_upstream_nodes(start_node=start_node)
-
-    def _load_model_vocab(self):
-        if not self._model_exists:
-            return
-
-        if not os.path.exists(model_cnst.DirectoryConfig.VOCAB_PATH):
-            return
-
-        try:
-            with open(model_cnst.DirectoryConfig.VOCAB_PATH, "r") as f:
-                self._vocabulary = json.load(f).get("node_type_to_idx", {})
-        except (json.JSONDecodeError, IOError) as e:
-            log.error(f"Failed to load vocabulary: {str(e)}")
+        panel = get_panel_instance()
+        widget = panel.prediction_widget.getObject()
+        if widget is None:
+            panel.show()
+            widget = panel.prediction_widget.getObject()
+        return widget

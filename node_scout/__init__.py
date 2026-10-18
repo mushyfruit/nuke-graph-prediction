@@ -1,19 +1,18 @@
-"""NodeScout package.
+import logging
+import os
+import sys
+from .core.model.constants import DirectoryConfig
 
-This package is primarily intended to run inside Nuke, but we keep imports
-lightweight so that tooling (tests, packaging, CLI helpers) can import
-`node_scout` without requiring Nuke's Python modules.
-"""
+LOG_FORMAT = "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
 
-from .core.model import constants as model_cnst
-
-
-def on_startup(*args, **kwargs):
-    """Entry point for Nuke's startup hook.
-
-    Import is deferred so importing this package outside of Nuke doesn't crash.
-    """
-
-    from .nuke_startup import on_startup as _on_startup
-
-    return _on_startup(*args, **kwargs)
+logger = logging.getLogger("node_scout")
+logger.setLevel(logging.INFO)
+logger.propagate = False
+if not logger.handlers:
+    os.makedirs(os.path.dirname(DirectoryConfig.LOG_FILE), exist_ok=True)
+    for handler in (
+        logging.FileHandler(DirectoryConfig.LOG_FILE),
+        logging.StreamHandler(sys.stdout),
+    ):
+        handler.setFormatter(logging.Formatter(LOG_FORMAT))
+        logger.addHandler(handler)

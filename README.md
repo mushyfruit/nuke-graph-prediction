@@ -1,45 +1,18 @@
-# nuke graph next-node prediction
-A Nuke plugin that leverages a locally trained machine-learning model to predict the next node based on your unique workflows.
+# NodeScout
 
-Includes a full framework for training Graph Attention Networks (GATs) specifically for Nuke, featuring a script parser and serializers, GAT implementations, and a lightweight FastAPI server for performing model inference in a separate process.
+A Nuke plugin that predicts the next node with a GATv2 graph neural network trained on your `.nk` scripts.
 
-### Features
-- **ML Prediction**s: Utilizes a Graph Attention Network (GATv2) for intelligent node recommendations.
-- **Graph Serialization**: Converts `.nk` scripts into structured and flattened graph data for model training and inference.
-- **End-to-End Training & Inference**: Supports model training and predictions via a custom panel within Nuke.
+Requires **Nuke 17.0v3, Linux x86-64, Python 3.11**, internet access for initial setup, and a writable plugin directory. The server runs separately and reuses Nuke's bundled libtorch/CUDA to keep the venv small.
 
-### Getting Started
-1. **Copy the contents of `init.py` and `menu.py` into your Nuke plugin path:**
-    ```python
-    # menu.py
-    import node_scout
-    node_scout.on_startup()
-    ```
-2. **Generate virtual environment for inference:**
-    - When launching the plugin for the first time, `bin/create-venv.sh` will be executed.
-    - The dependencies for the inference server will be automatically started.
-3. **Open the Prediction Panel:**
-    - Navigate to **Windows > Custom > NodeScout** in Nuke.
-4. **Train a local model:**
-    - Under the "Training" tab, click **Browse** and select a folder containing your Nuke scripts.
-    - Click Train to begin training the model on your scripts.
-5. **Get Predictions:**
-    - Once the model is finished training, click on the **Prediction** tab.
-    - Press **Ctrl + Shift + T** when selecting a node to perform a next-node prediction.
-      - Or enable **Predict on Selection** to perform predictions automatically upon selecting a node.
-    - The predicted Node Type and confidence score will be displayed.
-    - Double-click a node-type entry to automatically create it in the node graph.
+1. Add this repository's root to `NUKE_PATH` before launching Nuke:
 
-### Logs & Debugging
+   ```sh
+   export NUKE_PATH="/path/to/nuke-graph-prediction${NUKE_PATH:+:$NUKE_PATH}"
+   ```
 
-Logs are stored in:
-```
-checkpoints/logs/auto-predict.log
-```
-Inference logs are stored in:
-```
-checkpoints/logs/server.log
-```
+2. Launch Nuke normally. `menu.py` starts setup in the background on first launch. Follow `node_scout/checkpoints/logs/server.log` until setup finishes and the server starts.
+3. Open **Pane > NodeScout**. In **Training**, choose your scripts and train a model. In **Inference**, select a node and press **Ctrl + Shift + T**, or enable **Predict on Selection**. Double-click a recommendation to create it.
 
-### Contributing
-Contributions are welcome! Please fork the repository and submit a pull request for any improvements or bug fixes.
+Plugin logs: `node_scout/checkpoints/logs/auto-predict.log`. The server stops when Nuke exits. Set a distinct `AUTO_PREDICT_PORT` before launching each simultaneous Nuke instance (default `8080`).
+
+To set up manually, run `node_scout/bin/create-venv.sh /path/to/Nuke17.0v3 [venv-directory]`. `TORCH_WHEEL=/path/to/torch-2.7.1+cu128-cp311-cp311-manylinux_2_28_x86_64.whl` reuses a downloaded wheel. Rebuild the venv when changing Nuke installations.
