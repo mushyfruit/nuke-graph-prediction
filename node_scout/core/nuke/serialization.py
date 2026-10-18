@@ -1,8 +1,6 @@
 import os
 import json
 
-from .parser import NukeNode
-
 
 class NukeGraphSerializer:
     def __init__(self, output_dir=None):
@@ -11,26 +9,22 @@ class NukeGraphSerializer:
         if self.output_dir is not None:
             os.makedirs(self.output_dir, exist_ok=True)
 
-    def _serialize_node(self, node: NukeNode, node_id: str):
-        return {
-            "name": node.name,
-            "node_id": node_id,
-            "node_type": node.node_type,
-            "inputs": node.inputs,
-            "input_connections": list(node.input_connections),
-            "xpos": int(float(node.parameters.get("xpos", 0))),
-            "ypos": int(float(node.parameters.get("ypos", 0))),
-        }
-
     def _serialize_group(self, group):
-        child_nodes = {}
-        for node_id, node in group.nodes.items():
-            child_nodes[node_id] = self._serialize_node(node, node_id)
-
         return {
             "name": group.name,
             "parent": group.parent.name if group.parent else None,
-            "nodes": child_nodes,
+            "nodes": {
+                node_id: {
+                    "name": node.name,
+                    "node_id": node_id,
+                    "node_type": node.node_type,
+                    "inputs": node.inputs,
+                    "input_connections": list(node.input_connections),
+                    "xpos": int(float(node.parameters.get("xpos", 0))),
+                    "ypos": int(float(node.parameters.get("ypos", 0))),
+                }
+                for node_id, node in group.nodes.items()
+            },
         }
 
     def serialize_graph(self, script_name, nuke_script, start_node=None):

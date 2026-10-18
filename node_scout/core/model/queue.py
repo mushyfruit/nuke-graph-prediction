@@ -13,19 +13,17 @@ class StatusQueue(queue.Queue):
         super(StatusQueue, self).__init__(maxsize=maxsize)
         self._lock = threading.Lock()
 
-    def safe_put(self, status: TrainingStatus) -> bool:
+    def safe_put(self, status: TrainingStatus):
         with self._lock:
             try:
                 self.put(status, block=False)
-                return True
+                return
             except queue.Full:
                 try:
                     self.get_nowait()
                     self.put(status, block=False)
-                    return True
                 except (queue.Empty, queue.Full):
                     log.warning("Error: failed to put status to queue!")
-                    return False
 
     def get_latest(self) -> Optional[TrainingStatus]:
         try:

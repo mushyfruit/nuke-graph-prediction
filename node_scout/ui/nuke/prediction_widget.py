@@ -11,10 +11,7 @@ from ...core.model.utilities import check_for_model_on_disk
 from ...server.launcher import get_inference_launcher
 
 
-try:
-    from PySide6 import QtWidgets, QtCore, QtGui, QtNetwork
-except ImportError:
-    from PySide2 import QtWidgets, QtCore, QtGui, QtNetwork
+from PySide6 import QtWidgets, QtCore, QtGui, QtNetwork
 
 log = logging.getLogger(__name__)
 
@@ -322,7 +319,7 @@ class PredictionWidget(QtWidgets.QWidget):
     def _on_training_btn_clicked(self):
         if not self._stored_nuke_files:
             self._update_training_status_label(
-                "Unable to start training. Please select a valid directory."
+                "Select a scripts folder first."
             )
             return
 
@@ -421,10 +418,6 @@ class PredictionWidget(QtWidgets.QWidget):
 
     def _on_prediction_double_clicked(self, item, column):
         node_type = item.data(0, QtCore.Qt.UserRole)
-        if not node_type:
-            log.error("Unable to create prediction node!")
-            return
-
         try:
             with self._current_node.parent():
                 for node in nuke.selectedNodes():

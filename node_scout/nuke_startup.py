@@ -17,7 +17,11 @@ def on_startup():
         return
 
     try:
-        register_prediction_panel()
+        pane_menu = nuke.menu("Pane")
+        pane_menu.addCommand("NodeScout", prediction_panel.show_prediction_panel)
+        nukescripts.registerPanel(
+            "mushyfruit.node_scout", prediction_panel.show_prediction_panel
+        )
 
         nuke.menu("Nuke").addCommand(
             "Edit/Node/Auto-Predict",
@@ -27,11 +31,3 @@ def on_startup():
 
     except Exception as e:
         nuke.message(f"Failed to register NodeScout menus: {e}")
-
-
-def register_prediction_panel():
-    pane_menu = nuke.menu("Pane")
-    pane_menu.addCommand("NodeScout", prediction_panel.show_prediction_panel)
-    nukescripts.registerPanel(
-        "mushyfruit.node_scout", prediction_panel.show_prediction_panel
-    )

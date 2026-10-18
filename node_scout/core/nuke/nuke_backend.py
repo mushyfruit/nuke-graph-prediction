@@ -81,6 +81,6 @@ class NukeBackend:
         nuke.removeKnobChanged(callback_fn)
 
     def validate_node_for_inference(self, node: nuke.Node) -> bool:
-        if not node or node.maxOutputs() < 1 or node.inputs() < 1:
+        if node.maxOutputs() < 1 or node.inputs() < 1:
             return False
         return True

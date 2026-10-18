@@ -19,7 +19,6 @@ class PredictionManager:
 
         self._backend = NukeBackend()
         self._request_handler = RequestHandler()
-        self._min_node_requirement = 3
         self._model_exists = check_for_model_on_disk()
 
     def toggle_callback(self, enable_callback: bool):
@@ -59,7 +58,7 @@ class PredictionManager:
                     f"No prediction available for {target_node.fullName()}!"
                 )
                 return
-            if len(graph_data["root"]["nodes"]) <= self._min_node_requirement:
+            if len(graph_data["root"]["nodes"]) <= 3:
                 widget.update_prediction_page_status(
                     f"Not enough upstream nodes to predict for {target_node.name()}!"
                 )

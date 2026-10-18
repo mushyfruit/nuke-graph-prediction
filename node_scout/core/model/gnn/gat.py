@@ -104,12 +104,11 @@ class NukeGATPredictor(torch.nn.Module):
     def _init_weights(self, module):
         if isinstance(module, Linear):
             torch.nn.init.xavier_uniform_(module.weight)
-            if module.bias is not None:
-                torch.nn.init.constant_(module.bias, 0.1)
+            torch.nn.init.constant_(module.bias, 0.1)
 
     def forward(self, data):
         x = data.x
-        type_ids = x[:, 0].long().clamp(max=self.num_classes)
+        type_ids = x[:, 0].long()
         x = torch.cat((self.node_embedding(type_ids), x[:, 1:]), dim=1)
         x_initial = self.feature_encoder(x)
         x = x_initial

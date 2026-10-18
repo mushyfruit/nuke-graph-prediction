@@ -9,7 +9,7 @@ from .deserialize import create_graph_data
 from ..constants import DirectoryConfig
 
 import torch
-from typing import Dict, Optional, Any
+from typing import Dict, Any
 
 log = logging.getLogger(__name__)
 
@@ -55,27 +55,20 @@ class GraphDataset:
         )
         log.info(f"Processed {len(self.examples)} total examples")
 
-    def generate_graph_training_examples(
-        self,
-        data: Dict[str, Any],
-        min_context: Optional[int] = 5,
-        max_context: Optional[int] = 50,
-        stride: Optional[int] = 3,
-    ):
+    def generate_graph_training_examples(self, data: Dict[str, Any]):
         nodes = data["root"]["nodes"]
 
         graph_node_data = list(nodes.values())
         examples = []
 
-        for i in reversed(range(min_context, len(graph_node_data), stride)):
+        for i in reversed(range(5, len(graph_node_data), 3)):
             target_node_data = graph_node_data[i]
             graph_data = create_graph_data(
                 data,
                 target_node_data,
                 self.vocab,
                 update_vocab=True,
-                min_upstream_nodes=min_context,
-                max_upstream_nodes=max_context,
+                min_upstream_nodes=5,
             )
             if graph_data is None:
                 continue

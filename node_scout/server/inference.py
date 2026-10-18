@@ -104,7 +104,6 @@ def predict(
 
     try:
         start_node_name = request.start_node
-        log.info(f"Predicting node: {start_node_name}")
         prediction = predictor.predict(request.model_dump())
         return PredictionResponse(prediction=prediction, start_node=start_node_name)
     except Exception as e:
@@ -121,7 +120,6 @@ async def train(
     predictor: GNNPipelineManager = Depends(get_pipeline_manager),
 ):
     try:
-        log.info("Received a training request!")
         result = predictor.train(
             request.file_paths, request.memory_allocation, request.enable_fine_tuning
         )

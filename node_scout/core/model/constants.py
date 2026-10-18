@@ -3,7 +3,6 @@ from enum import Enum
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
 
-VOCAB = "vocab.json"
 MODEL_NAME = "nuke_predictor_gat"
 
 
@@ -14,16 +13,14 @@ class DirectoryConfig:
     MODEL_DATA_FOLDER = os.path.join(BASE_DIR, "tmp", "nuke_graphs")
     TMP_GRAPH_FOLDER = os.path.join(BASE_DIR, "tmp", "graph_vis")
     DATA_CACHE_PATH = os.path.join(MODEL_PATH, "data_cache")
-    VOCAB_PATH = os.path.join(DATA_CACHE_PATH, VOCAB)
+    VOCAB_PATH = os.path.join(DATA_CACHE_PATH, "vocab.json")
 
     LOSS_PLOT = os.path.join(TMP_GRAPH_FOLDER, "loss.png")
     TOPK_PLOT = os.path.join(TMP_GRAPH_FOLDER, "topk.png")
 
-    VENV_DIR = os.path.join(BASE_DIR, os.getenv("VENV_DIR_NAME", "inference_venv"))
+    VENV_DIR = os.path.join(BASE_DIR, "inference_venv")
     VENV_SETUP_SCRIPT = os.path.join(BASE_DIR, "bin", "create-venv.sh")
-    INFERENCE_SCRIPT_PATH = os.path.join(
-        BASE_DIR, "server", os.getenv("INFERENCE_SCRIPT_NAME", "inference.py")
-    )
+    INFERENCE_SCRIPT_PATH = os.path.join(BASE_DIR, "server", "inference.py")
     LOG_FILE = os.path.join(MODEL_PATH, "logs", "auto-predict.log")
     SERVER_LOG_FILE = os.path.join(MODEL_PATH, "logs", "server.log")
 

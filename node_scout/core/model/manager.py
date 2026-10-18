@@ -57,16 +57,11 @@ class GNNPipelineManager:
         try:
             checkpoint = torch.load(model_checkpoint_path, map_location=self.device)
             state_dict = checkpoint["state_dict"]
-            if "vocabulary" in checkpoint:
-                vocab = Vocabulary()
-                for node_type in checkpoint["vocabulary"]:
-                    vocab.add(node_type)
-            else:
-                vocab = Vocabulary(DirectoryConfig.VOCAB_PATH)
-            if len(vocab) != state_dict["prediction_head.8.bias"].numel():
-                raise ValueError("Checkpoint and vocabulary disagree; retrain the model")
+            vocab = Vocabulary()
+            for node_type in checkpoint["vocabulary"]:
+                vocab.add(node_type)
             model = self._model_class.from_checkpoint(
-                checkpoint, num_classes=state_dict["prediction_head.8.bias"].numel()
+                checkpoint, num_classes=len(vocab)
             ).to(self.device)
             model.load_state_dict(state_dict)
             model.eval()
@@ -87,13 +82,11 @@ class GNNPipelineManager:
                 phase=TrainingPhase.SERIALIZING, label="Pipeline already in progress"
             )
 
-        log.info("Starting the training pipeline!")
         while not self.status_queue.empty():
             self.status_queue.get_nowait()
 
         self._is_training.set()
 
-        log.info("Starting the training thread...")
         training_thread = threading.Thread(
             target=self._training_thread_target,
             args=(file_paths, memory_allocation, enable_fine_tuning),
@@ -101,7 +94,7 @@ class GNNPipelineManager:
         training_thread.start()
 
         return TrainingStatus(
-            phase=TrainingPhase.SERIALIZING, label="Pipeline started successfully..."
+            phase=TrainingPhase.SERIALIZING, label="Pipeline started"
         )
 
     def _training_thread_target(
@@ -131,12 +124,8 @@ class GNNPipelineManager:
                 torch.cuda.empty_cache()
 
             log.info(
-                f"Starting model training: "
-                f"Memory allocation: {memory_allocation}, "
-                f"fine-tuning: {enable_fine_tuning}"
+                "Training: memory=%s, fine-tuning=%s", memory_allocation, enable_fine_tuning
             )
-
-            log.info(f"Using: {self._model_config}")
 
             if enable_fine_tuning and self._model is not None:
                 checkpoint = self._model.to_checkpoint()
@@ -158,7 +147,6 @@ class GNNPipelineManager:
                     **self._model_config,
                 )
 
-            log.info("Training the model...")
             trained_model = train_model_gat(
                 dataset,
                 training_model,

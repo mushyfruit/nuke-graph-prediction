@@ -18,8 +18,8 @@ def get_inference_launcher():
 
 
 class InferenceLauncher:
-    def __init__(self, venv_path=None):
-        self.venv_path = venv_path if venv_path else DirectoryConfig.VENV_DIR
+    def __init__(self):
+        self.venv_path = DirectoryConfig.VENV_DIR
         self.python_path = os.path.join(self.venv_path, "bin", "python3")
         self.process = None
         self._restart_timer = None
@@ -109,10 +109,7 @@ class InferenceLauncher:
     def restart_service(self, host=None, port=None):
         if self._restart_timer is not None:
             return
-        try:
-            from PySide6 import QtCore
-        except ImportError:
-            from PySide2 import QtCore
+        from PySide6 import QtCore
 
         process = self.process
         if process is not None:

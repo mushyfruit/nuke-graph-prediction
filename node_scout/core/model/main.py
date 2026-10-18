@@ -2,8 +2,7 @@ import copy
 import time
 import logging
 import random
-from dataclasses import dataclass
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 import torch
 import torch.amp as amp
@@ -22,17 +21,23 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-@dataclass
-class TrainingConfig:
-    epochs: int = 150
-    batch_size: int = 64
-    learning_rate: float = 0.003
-    weight_decay: float = 0.01
-    gradient_clip: float = 1.5
-    label_smoothing: float = 0.05
+def train_model_gat(
+    dataset: GraphDataset,
+    model: NukeGATPredictor,
+    memory_fraction: float,
+    status_queue: "StatusQueue",
+    plot_queue: "StatusQueue",
+):
+    epochs = 150
+    device_type = "cuda" if torch.cuda.is_available() else "cpu"
+    device = torch.device(device_type)
+    model = model.to(device)
 
+    if torch.cuda.is_available():
+        torch.cuda.set_per_process_memory_fraction(memory_fraction)
 
-def setup_dataloaders(dataset: GraphDataset, config: TrainingConfig):
+    log.info("Using {} device".format(device))
+
     by_label = {}
     for graph in dataset.examples:
         by_label.setdefault(graph.y.item(), []).append(graph)
@@ -52,48 +57,23 @@ def setup_dataloaders(dataset: GraphDataset, config: TrainingConfig):
 
     train_loader = DataLoader(
         train_dataset,
-        batch_size=config.batch_size,
+        batch_size=64,
         shuffle=True,
     )
 
     val_loader = DataLoader(
         val_dataset,
-        batch_size=config.batch_size,
+        batch_size=64,
     )
-
-    return train_loader, val_loader
-
-
-def train_model_gat(
-    dataset: GraphDataset,
-    model: NukeGATPredictor,
-    memory_fraction: float,
-    status_queue: "StatusQueue",
-    plot_queue: "StatusQueue",
-    config: Optional[TrainingConfig] = None,
-):
-    if config is None:
-        config = TrainingConfig()
-
-    device_type = "cuda" if torch.cuda.is_available() else "cpu"
-    device = torch.device(device_type)
-    model = model.to(device)
-
-    if torch.cuda.is_available():
-        torch.cuda.set_per_process_memory_fraction(memory_fraction)
-
-    log.info("Using {} device".format(device))
-
-    train_loader, val_loader = setup_dataloaders(dataset, config)
 
     optimizer = optim.AdamW(
         model.parameters(),
-        lr=config.learning_rate,
-        weight_decay=config.weight_decay,
+        lr=0.003,
+        weight_decay=0.01,
         betas=(0.9, 0.999),
     )
 
-    criterion = torch.nn.CrossEntropyLoss(label_smoothing=config.label_smoothing)
+    criterion = torch.nn.CrossEntropyLoss(label_smoothing=0.05)
 
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer,
@@ -115,7 +95,7 @@ def train_model_gat(
     plotter.start()
 
     try:
-        for epoch in range(config.epochs):
+        for epoch in range(epochs):
             model.train()
 
             total_loss = 0
@@ -137,7 +117,7 @@ def train_model_gat(
                 scaler.unscale_(optimizer)
 
                 torch.nn.utils.clip_grad_norm_(
-                    model.parameters(), max_norm=config.gradient_clip
+                    model.parameters(), max_norm=1.5
                 )
 
                 scaler.step(optimizer)
@@ -176,32 +156,28 @@ def train_model_gat(
             val_accuracy = 100 * val_correct / val_total
 
             scheduler.step(avg_val_loss)
-            current_lr = optimizer.param_groups[0]["lr"]
 
             if val_accuracy > best_val_accuracy:
                 best_val_accuracy = val_accuracy
                 best_model_state = copy.deepcopy(model.state_dict())
-                log.info(f"  New best validation accuracy: {best_val_accuracy:.2f}%")
 
-            log.info(f"Epoch {epoch + 1}/{config.epochs}:")
             log.info(
-                f"  Train Loss: {avg_train_loss:.4f}, Train Accuracy: {train_accuracy:.2f}%"
+                f"Epoch {epoch + 1}/{epochs}: train={avg_train_loss:.4f} ({train_accuracy:.2f}%), "
+                f"val={avg_val_loss:.4f} ({val_accuracy:.2f}%)"
             )
-            log.info(f"  Val Loss: {avg_val_loss:.4f}, Val Accuracy: {val_accuracy:.2f}%")
-            log.info(f"  Learning Rate: {current_lr:.2e}")
 
             current_epoch = epoch + 1
             status_update = TrainingStatus(
                 TrainingPhase.TRAINING,
                 current_epoch=current_epoch,
-                total_epochs=config.epochs,
+                total_epochs=epochs,
                 training_loss=avg_train_loss,
                 training_accuracy=train_accuracy,
                 validation_loss=avg_val_loss,
                 validation_accuracy=val_accuracy,
                 topk_accuracy=topk_avg,
-                progress=float(current_epoch / config.epochs),
-                label=f"Training Model: {current_epoch}/{config.epochs}",
+                progress=float(current_epoch / epochs),
+                label=f"Training Model: {current_epoch}/{epochs}",
             )
 
             status_queue.safe_put(status_update)
